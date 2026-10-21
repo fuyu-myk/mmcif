@@ -70,12 +70,6 @@ fn parse_flag(text: &str) -> Option<bool> {
     }
 }
 
-fn single_char(text: &str) -> Option<char> {
-    let mut chars = text.chars();
-    let first = chars.next()?;
-    chars.next().is_none().then_some(first)
-}
-
 impl Component {
     pub fn from_block(block: Block<'_>) -> Result<Component, CcdError> {
         let chem_comp = Table::new(block, "chem_comp");
@@ -87,7 +81,7 @@ impl Component {
             id,
             name: owned("name").unwrap_or_default(),
             kind: owned("type").unwrap_or_default(),
-            one_letter_code: chem_comp.parsed("one_letter_code", 0, single_char)?,
+            one_letter_code: owned("one_letter_code"),
             parent: owned("mon_nstd_parent_comp_id"),
             formula: owned("formula"),
             formal_charge: chem_comp
@@ -219,7 +213,7 @@ TST C1 FE SING N N
         assert_eq!(tst.formula(), Some("C2 H4"));
         assert_eq!(tst.parent(), Some("ALA"));
         assert_eq!(tst.formal_charge(), -1);
-        assert_eq!(tst.one_letter_code(), Some('X'));
+        assert_eq!(tst.one_letter_code(), Some("X"));
         assert_eq!(tst.release_status(), "REL");
     }
 
@@ -312,7 +306,6 @@ TST C1 FE SING N N
             ("C 0 Y N R", "C 300 Y N R", "_chem_comp_atom.charge"),
             ("DOUB Y E", "DOUB Y R", "_chem_comp_bond.pdbx_stereo_config"),
             ("charge -1", "charge one", "_chem_comp.pdbx_formal_charge"),
-            ("code X", "code XY", "_chem_comp.one_letter_code"),
         ];
         for (from, to, expected) in cases {
             let error = component(&SAMPLE.replace(from, to)).unwrap_err();

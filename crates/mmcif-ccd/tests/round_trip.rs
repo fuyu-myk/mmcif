@@ -47,7 +47,7 @@ struct ComponentSpec {
     kind: Option<&'static str>,
     formula: Option<String>,
     parent: Option<String>,
-    one_letter_code: Option<char>,
+    one_letter_code: Option<String>,
     formal_charge: Option<i32>,
     release_status: Option<&'static str>,
     atoms: Vec<AtomSpec>,
@@ -106,7 +106,7 @@ fn component_spec() -> impl Strategy<Value = ComponentSpec> {
         ])),
         proptest::option::of("[A-Z][a-z]?[0-9]{0,2}( [A-Z][a-z]?[0-9]{0,2}){0,3}"),
         proptest::option::of("[A-Z]{3}"),
-        proptest::option::of(prop::char::range('A', 'Z')),
+        proptest::option::of("[A-Z]{1,3}"),
         proptest::option::of(-3i32..=3),
         proptest::option::of(prop::sample::select(vec!["REL", "OBS", "HOLD"])),
     );
@@ -121,7 +121,7 @@ fn component_spec() -> impl Strategy<Value = ComponentSpec> {
             kind,
             formula: formula.clone(),
             parent: parent.clone(),
-            one_letter_code,
+            one_letter_code: one_letter_code.clone(),
             formal_charge,
             release_status,
             atoms: atoms.clone(),
@@ -139,7 +139,6 @@ fn flag(flag: Option<bool>) -> Value<'static> {
 }
 
 fn write_component(builder: &mut DocumentBuilder, id: &str, spec: &ComponentSpec) {
-    let letter = spec.one_letter_code.map(String::from);
     let charge = spec.formal_charge.map(|charge| charge.to_string());
     builder.start_block(id).unwrap();
     let pairs = [
@@ -151,7 +150,10 @@ fn write_component(builder: &mut DocumentBuilder, id: &str, spec: &ComponentSpec
             "_chem_comp.mon_nstd_parent_comp_id",
             optional(spec.parent.as_deref()),
         ),
-        ("_chem_comp.one_letter_code", optional(letter.as_deref())),
+        (
+            "_chem_comp.one_letter_code",
+            optional(spec.one_letter_code.as_deref()),
+        ),
         ("_chem_comp.pdbx_formal_charge", optional(charge.as_deref())),
         (
             "_chem_comp.pdbx_release_status",
@@ -227,7 +229,7 @@ fn assert_matches_spec(component: &Component, id: &str, spec: &ComponentSpec) {
     assert_eq!(component.kind(), spec.kind.unwrap_or_default());
     assert_eq!(component.formula(), spec.formula.as_deref());
     assert_eq!(component.parent(), spec.parent.as_deref());
-    assert_eq!(component.one_letter_code(), spec.one_letter_code);
+    assert_eq!(component.one_letter_code(), spec.one_letter_code.as_deref());
     assert_eq!(component.formal_charge(), spec.formal_charge.unwrap_or(0));
     assert_eq!(
         component.release_status(),

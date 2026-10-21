@@ -17,10 +17,7 @@ pub(crate) fn encode_record(component: &Component, out: &mut Vec<u8>) {
     put_str(out, &component.kind);
     put_opt_str(out, component.formula.as_deref());
     put_opt_str(out, component.parent.as_deref());
-    out.push(u8::from(component.one_letter_code.is_some()));
-    if let Some(code) = component.one_letter_code {
-        out.extend_from_slice(&u32::from(code).to_le_bytes());
-    }
+    put_opt_str(out, component.one_letter_code.as_deref());
     out.extend_from_slice(&component.formal_charge.to_le_bytes());
     put_str(out, &component.release_status);
     put_varint(out, component.atoms.len() as u64);
@@ -46,11 +43,7 @@ pub(crate) fn decode_record(payload: &[u8]) -> Result<Component, CcdError> {
     let kind = reader.str()?.to_owned();
     let formula = reader.opt_str()?.map(str::to_owned);
     let parent = reader.opt_str()?.map(str::to_owned);
-    let one_letter_code = if reader.bool()? {
-        Some(char::from_u32(reader.u32()?).ok_or(corrupt("invalid one-letter code"))?)
-    } else {
-        None
-    };
+    let one_letter_code = reader.opt_str()?.map(str::to_owned);
     let formal_charge = reader.i32()?;
     let release_status = reader.str()?.to_owned();
     let atoms = decode_atoms(&mut reader)?;
@@ -186,7 +179,7 @@ pub(crate) mod tests {
             id: id.to_owned(),
             name: format!("component {id}"),
             kind: "L-PEPTIDE LINKING".to_owned(),
-            one_letter_code: Some('\u{e9}'),
+            one_letter_code: Some("YG".to_owned()),
             parent: Some("ALA".to_owned()),
             formula: None,
             formal_charge: -2,

@@ -5,7 +5,7 @@ pub struct Component {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) kind: String,
-    pub(crate) one_letter_code: Option<char>,
+    pub(crate) one_letter_code: Option<String>,
     pub(crate) parent: Option<String>,
     pub(crate) formula: Option<String>,
     pub(crate) formal_charge: i32,
@@ -27,8 +27,8 @@ impl Component {
         &self.kind
     }
 
-    pub fn one_letter_code(&self) -> Option<char> {
-        self.one_letter_code
+    pub fn one_letter_code(&self) -> Option<&str> {
+        self.one_letter_code.as_deref()
     }
 
     pub fn parent(&self) -> Option<&str> {

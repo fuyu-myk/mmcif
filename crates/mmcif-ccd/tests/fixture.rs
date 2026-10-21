@@ -63,7 +63,7 @@ fn alanine() {
     let ala = component(&sample_index(), "ALA");
     assert_eq!(ala.name(), "ALANINE");
     assert_eq!(ala.kind(), "L-PEPTIDE LINKING");
-    assert_eq!(ala.one_letter_code(), Some('A'));
+    assert_eq!(ala.one_letter_code(), Some("A"));
     assert_eq!(ala.parent(), None);
     assert_eq!(ala.formula(), Some("C3 H7 N O2"));
     assert_eq!((ala.formal_charge(), ala.release_status()), (0, "REL"));
@@ -82,7 +82,7 @@ fn alanine() {
 fn selenomethionine_names_its_parent() {
     let mse = component(&sample_index(), "MSE");
     assert_eq!(mse.parent(), Some("MET"));
-    assert_eq!(mse.one_letter_code(), Some('M'));
+    assert_eq!(mse.one_letter_code(), Some("M"));
     assert!(mse.atoms().iter().any(|atom| atom.element() == "SE"));
 }
 
