@@ -165,3 +165,66 @@ fn ignores_files_without_atoms() {
     let structure = parse_pdb("HEADER    EMPTY\nEND\n").unwrap();
     assert!(structure.models().is_empty());
 }
+
+fn atom_line(record: &str, serial: u32, name: &str, comp: &str, chain: char, seq: i32) -> String {
+    format!(
+        "{record:<6}{serial:>5}  {name:<3} {comp:>3} {chain}{seq:>4}    {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}          {:>2}  ",
+        seq as f64,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        &name[..1]
+    )
+}
+
+#[test]
+fn atom_records_after_ter_start_a_new_polymer_chain() {
+    let lines = [
+        atom_line("ATOM", 1, "N", "ALA", ' ', 1),
+        atom_line("ATOM", 2, "N", "GLY", ' ', 2),
+        "TER".to_owned(),
+        atom_line("ATOM", 3, "N", "SER", ' ', 1),
+        atom_line("ATOM", 4, "N", "THR", ' ', 2),
+        atom_line("ATOM", 5, "N", "VAL", ' ', 3),
+        "TER".to_owned(),
+        atom_line("HETATM", 6, "C1", "LIG", ' ', 4),
+    ];
+    let structure = parse_pdb(&lines.join("\n")).unwrap();
+    let chains: Vec<String> = structure
+        .first_model()
+        .unwrap()
+        .chains()
+        .iter()
+        .map(|c| format!("{}:{}", c.label_asym(), c.residues().len()))
+        .collect();
+    assert_eq!(chains, ["A:2", "B:3", "C:1"]);
+    let kinds: Vec<&str> = structure
+        .entities()
+        .iter()
+        .map(|e| e.kind().as_mmcif_str())
+        .collect();
+    assert_eq!(kinds, ["polymer", "polymer", "non-polymer"]);
+}
+
+#[test]
+fn rejects_malformed_serials_and_charges() {
+    let mut bad_charge = atom_line("HETATM", 1, "ZN", "ZN", 'A', 1);
+    bad_charge.replace_range(78..80, "+2");
+    assert!(matches!(
+        parse_pdb(&bad_charge).unwrap_err(),
+        ReadError::Pdb {
+            problem: "invalid formal charge",
+            ..
+        }
+    ));
+    let mut bad_serial = atom_line("ATOM", 1, "N", "ALA", 'A', 1);
+    bad_serial.replace_range(6..11, "1x2y3");
+    assert!(matches!(
+        parse_pdb(&bad_serial).unwrap_err(),
+        ReadError::Pdb {
+            problem: "invalid atom serial",
+            ..
+        }
+    ));
+}

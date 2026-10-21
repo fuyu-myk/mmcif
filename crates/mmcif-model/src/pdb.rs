@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::entity::{Entity, EntityKind};
@@ -53,6 +53,20 @@ impl<'a> Line<'a> {
         self.field(start, end)?
             .parse()
             .map_err(|_| self.error(problem))
+    }
+
+    fn optional<T>(
+        &self,
+        start: usize,
+        end: usize,
+        problem: &'static str,
+        decode: impl FnOnce(&str) -> Option<T>,
+    ) -> Result<Option<T>, ReadError> {
+        let raw = self.columns(start, end)?;
+        if raw.trim().is_empty() {
+            return Ok(None);
+        }
+        decode(raw).map(Some).ok_or_else(|| self.error(problem))
     }
 
     fn number_or<T: std::str::FromStr>(
@@ -128,14 +142,14 @@ fn infer_element(name: &str, hetero: bool) -> Option<Element> {
 
 struct PdbResidue {
     chain: AuthAsymId,
+    segment: u32,
     residue: Residue,
-    after_ter: bool,
 }
 
 struct PdbModel {
     number: i32,
     residues: Vec<PdbResidue>,
-    terminated: HashSet<AuthAsymId>,
+    terminations: HashMap<AuthAsymId, u32>,
 }
 
 impl PdbModel {
@@ -143,7 +157,7 @@ impl PdbModel {
         PdbModel {
             number,
             residues: Vec::new(),
-            terminated: HashSet::new(),
+            terminations: HashMap::new(),
         }
     }
 
@@ -164,7 +178,9 @@ impl PdbModel {
         }
         .ok_or_else(|| line.error("missing or invalid element"))?;
         let atom = Atom {
-            serial: decode_hybrid36(line.columns(6, 11)?, 5),
+            serial: line.optional(6, 11, "invalid atom serial", |field| {
+                decode_hybrid36(field, 5)
+            })?,
             name: AtomName::new(name_columns.trim()),
             element,
             altloc: line.code(16)?.map_or(AltLoc::NONE, AltLoc::new),
@@ -175,10 +191,12 @@ impl PdbModel {
             ],
             occupancy: line.number_or(54, 60, 1.0, "invalid occupancy")?,
             b_factor: line.number_or(60, 66, 0.0, "invalid temperature factor")?,
-            charge: parse_charge(line.field(78, 80)?),
+            charge: line.optional(78, 80, "invalid formal charge", parse_charge)?,
         };
+        let segment = self.segment(&chain);
         let continues = self.residues.last().is_some_and(|last| {
             last.chain == chain
+                && last.segment == segment
                 && last.residue.auth_seq.get() == auth_seq
                 && last.residue.ins_code == ins_code
                 && last.residue.comp.as_str() == comp
@@ -188,7 +206,7 @@ impl PdbModel {
                 Residue::new(CompId::new(comp), None, AuthSeqId::new(auth_seq), ins_code);
             residue.hetero = hetero;
             self.residues.push(PdbResidue {
-                after_ter: self.terminated.contains(&chain),
+                segment,
                 chain,
                 residue,
             });
@@ -210,12 +228,16 @@ impl PdbModel {
                 None => return Ok(()),
             },
         };
-        self.terminated.insert(chain);
+        *self.terminations.entry(chain).or_default() += 1;
         Ok(())
+    }
+
+    fn segment(&self, chain: &AuthAsymId) -> u32 {
+        self.terminations.get(chain).copied().unwrap_or(0)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Role {
     Polymer,
     NonPolymer,
@@ -223,10 +245,10 @@ enum Role {
 }
 
 fn roles(model: &PdbModel) -> Vec<Role> {
-    let mut last_polymer_atom: HashMap<&AuthAsymId, usize> = HashMap::new();
+    let mut last_atom_record: HashMap<(&AuthAsymId, u32), usize> = HashMap::new();
     for (index, entry) in model.residues.iter().enumerate() {
-        if !entry.after_ter && !entry.residue.hetero {
-            last_polymer_atom.insert(&entry.chain, index);
+        if !entry.residue.hetero {
+            last_atom_record.insert((&entry.chain, entry.segment), index);
         }
     }
     model
@@ -234,14 +256,13 @@ fn roles(model: &PdbModel) -> Vec<Role> {
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let is_water = WATER_NAMES.contains(&entry.residue.comp.as_str());
-            let before_end = model.terminated.contains(&entry.chain)
-                || last_polymer_atom
-                    .get(&entry.chain)
-                    .is_some_and(|&last| index <= last);
-            if is_water {
+            let closed = entry.segment < model.segment(&entry.chain);
+            let in_polymer = last_atom_record
+                .get(&(&entry.chain, entry.segment))
+                .is_some_and(|&last| closed || index <= last);
+            if WATER_NAMES.contains(&entry.residue.comp.as_str()) {
                 Role::Water
-            } else if !entry.after_ter && before_end {
+            } else if in_polymer {
                 Role::Polymer
             } else {
                 Role::NonPolymer
@@ -265,16 +286,15 @@ fn label_asym_name(index: usize) -> String {
 fn build_model(model: PdbModel) -> (Model, Vec<Role>) {
     let roles = roles(&model);
     let mut chains: Vec<(Role, Chain)> = Vec::new();
-    let mut polymer_chain: HashMap<AuthAsymId, usize> = HashMap::new();
-    let mut water_chain: HashMap<AuthAsymId, usize> = HashMap::new();
+    let mut grouped_chains: HashMap<(Role, AuthAsymId, u32), usize> = HashMap::new();
     for (entry, role) in model.residues.into_iter().zip(&roles) {
-        let grouped = match role {
-            Role::Polymer => Some(&mut polymer_chain),
-            Role::Water => Some(&mut water_chain),
+        let group = match role {
+            Role::Polymer => Some((*role, entry.chain.clone(), entry.segment)),
+            Role::Water => Some((*role, entry.chain.clone(), 0)),
             Role::NonPolymer => None,
         };
-        let index = match grouped {
-            Some(map) => *map.entry(entry.chain.clone()).or_insert_with(|| {
+        let index = match group {
+            Some(key) => *grouped_chains.entry(key).or_insert_with(|| {
                 chains.push((
                     *role,
                     Chain::new(LabelAsymId::new(""), entry.chain.clone(), None),
