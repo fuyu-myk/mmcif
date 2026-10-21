@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use crate::expression::{InvalidExpression, OperatorExpression};
 use crate::ids::{AssemblyId, LabelAsymId, OperatorId};
-use crate::structure::{Chain, Model, Structure};
+use crate::model::{Model, ModelBuilder};
+use crate::structure::Structure;
+use crate::view::ChainRef;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
@@ -144,6 +146,8 @@ pub enum AssemblyError {
         assembly: AssemblyId,
         operator: OperatorId,
     },
+    #[error("assembly {assembly} would hold {atoms} atoms")]
+    TooLarge { assembly: AssemblyId, atoms: u64 },
 }
 
 impl Structure {
@@ -151,24 +155,36 @@ impl Structure {
         let assembly = self
             .assembly(id)
             .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
-        let mut chains = Vec::new();
+        let mut plans = Vec::with_capacity(assembly.generators.len());
+        let mut total_atoms: u64 = 0;
         for generator in &assembly.generators {
             let wanted: HashSet<&LabelAsymId> = generator.asym_ids.iter().collect();
-            let selected: Vec<&Chain> = model
-                .chains
-                .iter()
-                .filter(|chain| chain.operators.is_empty() && wanted.contains(&chain.label_asym))
+            let selected: Vec<ChainRef<'_>> = model
+                .chains()
+                .filter(|chain| chain.operators().is_empty() && wanted.contains(chain.label_asym()))
                 .collect();
+            let atoms: u64 = selected.iter().map(|chain| chain.atom_count() as u64).sum();
+            total_atoms =
+                total_atoms.saturating_add(atoms.saturating_mul(generator.operators.len() as u64));
+            plans.push((generator, selected));
+        }
+        if total_atoms > u64::from(u32::MAX) {
+            return Err(AssemblyError::TooLarge {
+                assembly: id.clone(),
+                atoms: total_atoms,
+            });
+        }
+        let mut builder = ModelBuilder::derived_from(model);
+        builder.reserve_atoms(total_atoms as usize);
+        for (generator, selected) in plans {
             for combination in generator.operators.combinations() {
                 let transform = self.combined_transform(id, &combination)?;
-                chains.extend(
-                    selected
-                        .iter()
-                        .map(|chain| transformed_chain(chain, &transform, &combination)),
-                );
+                for chain in &selected {
+                    copy_transformed_chain(&mut builder, model, *chain, &transform, &combination);
+                }
             }
         }
-        Ok(Model::new(model.number, chains))
+        Ok(builder.finish())
     }
 
     fn combined_transform(
@@ -190,17 +206,37 @@ impl Structure {
     }
 }
 
-fn transformed_chain(chain: &Chain, transform: &Transform, combination: &[OperatorId]) -> Chain {
-    let mut copy = chain.clone();
-    copy.operators = combination.to_vec();
-    for atom in copy
-        .residues
-        .iter_mut()
-        .flat_map(|residue| residue.atoms.iter_mut())
-    {
-        atom.position = transform.apply(atom.position);
+fn copy_transformed_chain(
+    builder: &mut ModelBuilder,
+    model: &Model,
+    chain: ChainRef<'_>,
+    transform: &Transform,
+    combination: &[OperatorId],
+) {
+    let slot = builder.new_chain(
+        chain.label_asym().clone(),
+        chain.auth_asym().clone(),
+        chain.entity().cloned(),
+        combination.to_vec(),
+    );
+    for residue in chain.residues() {
+        let residue_slot = builder.new_residue(
+            slot,
+            residue.comp().clone(),
+            residue.label_seq(),
+            residue.auth_seq(),
+            residue.ins_code(),
+            residue.is_hetero(),
+        );
+        for atom in residue.atom_range() {
+            builder.push_copied_atom(
+                residue_slot,
+                model,
+                atom,
+                transform.apply(model.positions()[atom]),
+            );
+        }
     }
-    copy
 }
 
 #[cfg(test)]

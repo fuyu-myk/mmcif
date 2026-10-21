@@ -49,11 +49,7 @@ fn keeps_models_separate() {
 fn groups_atoms_into_label_chains_with_author_ids() {
     let structure = structure();
     let model = structure.first_model().unwrap();
-    let labels: Vec<&str> = model
-        .chains()
-        .iter()
-        .map(|c| c.label_asym().as_str())
-        .collect();
+    let labels: Vec<&str> = model.chains().map(|c| c.label_asym().as_str()).collect();
     assert_eq!(labels, ["AA", "B", "C", "D"]);
     assert_eq!(model.auth_chain("H1").count(), 4);
     let waters = model.chain("D").unwrap();
@@ -68,13 +64,13 @@ fn insertion_codes_give_distinct_residues() {
     let plain: Vec<&str> = model
         .residues_at(&auth(100, None))
         .iter()
-        .map(|(_, r)| r.comp().as_str())
+        .map(|r| r.comp().as_str())
         .collect();
     assert_eq!(plain, ["SER", "THR"]);
     let inserted = model.residues_at(&auth(100, Some('A')));
     assert_eq!(inserted.len(), 1);
-    assert_eq!(inserted[0].1.comp().as_str(), "ALA");
-    assert_eq!(inserted[0].1.label_seq(), LabelSeqId::new(3));
+    assert_eq!(inserted[0].comp().as_str(), "ALA");
+    assert_eq!(inserted[0].label_seq(), LabelSeqId::new(3));
 }
 
 #[test]
@@ -100,7 +96,7 @@ fn residue_keys_are_unique_and_resolvable() {
     let mut keys = Vec::new();
     for chain in model.chains() {
         for residue in chain.residues() {
-            let key = chain.residue_key(residue);
+            let key = residue.key();
             assert_eq!(model.residue(&key), Some(residue));
             keys.push(key);
         }
@@ -134,7 +130,6 @@ fn altloc_conformers_and_selection() {
             .chain("AA")
             .unwrap()
             .residues()
-            .iter()
             .map(|r| format!("{}:{}", r.comp(), r.atoms().len()))
             .collect()
     };
@@ -202,12 +197,27 @@ fn reads_entities() {
 fn reads_atom_properties() {
     let structure = structure();
     let model = structure.first_model().unwrap();
-    let zinc = model.chain("C").unwrap().residues()[0].atom("ZN").unwrap();
+    let zinc = model
+        .chain("C")
+        .unwrap()
+        .residues()
+        .next()
+        .unwrap()
+        .atom("ZN")
+        .unwrap();
     assert_eq!(zinc.element().symbol(), "Zn");
     assert_eq!(zinc.charge(), Some(2));
     assert_eq!(zinc.serial(), Some(14));
     assert_eq!(zinc.b_factor(), 30.0);
-    assert!(model.chain("C").unwrap().residues()[0].is_hetero());
+    assert!(
+        model
+            .chain("C")
+            .unwrap()
+            .residues()
+            .next()
+            .unwrap()
+            .is_hetero()
+    );
 }
 
 #[test]
@@ -237,14 +247,12 @@ fn expands_assemblies() {
 
     let identity = structure.assemble(&AssemblyId::new("1"), model).unwrap();
     assert_eq!(identity.atom_count(), model.atom_count());
-    let positions =
-        |m: &mmcif_model::Model| m.atoms().map(|(_, _, a)| a.position()).collect::<Vec<_>>();
+    let positions = |m: &mmcif_model::Model| m.atoms().map(|a| a.position()).collect::<Vec<_>>();
     assert_eq!(positions(&identity), positions(model));
 
     let dimer = structure.assemble(&AssemblyId::new("2"), model).unwrap();
     let copies: Vec<String> = dimer
         .chains()
-        .iter()
         .map(|c| {
             format!(
                 "{}x{}",
@@ -258,13 +266,33 @@ fn expands_assemblies() {
         })
         .collect();
     assert_eq!(copies, ["AAx1", "Cx1", "AAx2", "Cx2"]);
-    let rotated_zinc = dimer.chains()[3].residues()[0].atoms()[0].position();
+    let rotated_zinc = dimer
+        .chains()
+        .nth(3)
+        .unwrap()
+        .residues()
+        .next()
+        .unwrap()
+        .atoms()
+        .next()
+        .unwrap()
+        .position();
     assert_eq!(rotated_zinc, [-0.0, -0.0, 5.0]);
 
     let product = structure.assemble(&AssemblyId::new("3"), model).unwrap();
     assert_eq!(product.chains().len(), 1);
     assert_eq!(
-        product.chains()[0].residues()[0].atoms()[0].position(),
+        product
+            .chains()
+            .next()
+            .unwrap()
+            .residues()
+            .next()
+            .unwrap()
+            .atoms()
+            .next()
+            .unwrap()
+            .position(),
         [-11.0, -2.0, 3.0]
     );
 
@@ -356,9 +384,11 @@ fn highest_occupancy_compares_mean_occupancy_per_altloc() {
         .first_model()
         .unwrap()
         .single_conformer(AltlocPolicy::HighestOccupancy);
-    let comps: Vec<&str> = selected.chains()[0]
+    let comps: Vec<&str> = selected
+        .chains()
+        .next()
+        .unwrap()
         .residues()
-        .iter()
         .map(|r| r.comp().as_str())
         .collect();
     assert_eq!(comps, ["GLY"]);
@@ -370,7 +400,7 @@ fn files_without_author_columns_do_not_invent_author_numbering() {
                 _atom_site.type_symbol\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n\
                 _atom_site.Cartn_z\nA GLY N N 1 0 0 0\n";
     let structure = parse_mmcif(text).unwrap();
-    let chain = &structure.first_model().unwrap().chains()[0];
+    let chain = &structure.first_model().unwrap().chains().next().unwrap();
     assert_eq!(chain.auth_asym().as_str(), "A");
     assert_eq!(
         structure.numbering().to_auth(&LabelResidueKey {
@@ -402,4 +432,35 @@ fn null_author_values_are_errors_when_the_column_exists() {
             ..
         }
     ));
+}
+
+#[test]
+fn interleaved_rows_are_grouped_into_contiguous_residues() {
+    let rows = "A A GLY N . N 1 1 1 0 0\nB B ALA N . N 1 1 2 0 0\nA A GLY CA . C 1 1 3 0 0\n\
+                A A SER N . N 2 2 4 0 0\nB B ALA CA . C 1 1 5 0 0";
+    let structure = parse_mmcif(&with_atom_site(rows)).unwrap();
+    let model = structure.first_model().unwrap();
+    let layout: Vec<String> = model
+        .residues()
+        .map(|r| {
+            let atoms: Vec<String> = r
+                .atoms()
+                .map(|a| format!("{}@{}", a.name(), a.position()[0]))
+                .collect();
+            format!(
+                "{}:{}:{}",
+                r.chain().label_asym(),
+                r.comp(),
+                atoms.join(",")
+            )
+        })
+        .collect();
+    assert_eq!(layout, ["A:GLY:N@1,CA@3", "A:SER:N@4", "B:ALA:N@2,CA@5"]);
+    assert_eq!(model.positions().len(), 5);
+    assert_eq!(
+        model.chain("B").unwrap().positions(),
+        [[2.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    );
+    let atom = model.atoms().nth(4).unwrap();
+    assert_eq!(atom.residue().chain().label_asym().as_str(), "B");
 }

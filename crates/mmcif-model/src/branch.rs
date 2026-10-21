@@ -1,6 +1,8 @@
 use crate::entity::{BranchAtom, BranchLink};
 use crate::ids::{EntityId, LabelAsymId};
-use crate::structure::{Atom, Chain, Model, Residue, Structure};
+use crate::model::Model;
+use crate::structure::Structure;
+use crate::view::{AtomRef, ChainRef, ResidueRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -17,8 +19,8 @@ pub enum BranchError {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LinkedAtom<'a> {
-    pub residue: &'a Residue,
-    pub atom: &'a Atom,
+    pub residue: ResidueRef<'a>,
+    pub atom: AtomRef<'a>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,15 +40,14 @@ impl Structure {
             .chain(asym)
             .ok_or_else(|| BranchError::UnknownChain(LabelAsymId::new(asym)))?;
         let entity_id = chain
-            .entity
-            .as_ref()
-            .ok_or_else(|| BranchError::NotBranched(chain.label_asym.clone()))?;
+            .entity()
+            .ok_or_else(|| BranchError::NotBranched(chain.label_asym().clone()))?;
         let entity = self
             .entity(entity_id.as_str())
             .ok_or_else(|| BranchError::UnknownEntity(entity_id.clone()))?;
         let branch = entity
             .branch()
-            .ok_or_else(|| BranchError::NotBranched(chain.label_asym.clone()))?;
+            .ok_or_else(|| BranchError::NotBranched(chain.label_asym().clone()))?;
         branch
             .links()
             .iter()
@@ -62,19 +63,19 @@ impl Structure {
 
     fn locate<'a>(
         &self,
-        chain: &'a Chain,
+        chain: ChainRef<'a>,
         target: &BranchAtom,
     ) -> Result<Option<LinkedAtom<'a>>, BranchError> {
         let auth = self
             .numbering
-            .branch_to_auth(&chain.label_asym, target.num)
+            .branch_to_auth(chain.label_asym(), target.num)
             .ok_or_else(|| BranchError::MissingBranchNumbering {
-                asym: chain.label_asym.clone(),
+                asym: chain.label_asym().clone(),
                 num: target.num,
             })?;
         Ok(chain
             .residues_at_auth(auth.seq, auth.ins_code)
-            .filter(|residue| residue.comp == target.comp)
+            .filter(|residue| residue.comp() == &target.comp)
             .find_map(|residue| {
                 residue
                     .atom(target.atom.as_str())

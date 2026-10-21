@@ -6,14 +6,16 @@ mod table;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use mmcif_cif::{Block, Document};
 
 use crate::entity::Entity;
 use crate::error::ReadError;
 use crate::ids::{EntityId, LabelAsymId};
+use crate::model::Model;
 use crate::pdb;
-use crate::structure::{Model, Structure};
+use crate::structure::Structure;
 
 impl Structure {
     pub fn from_document(document: &Document) -> Result<Structure, ReadError> {
@@ -37,7 +39,7 @@ impl Structure {
             entry_id,
             numbering: numbering::read_numbering(block, &models, has_author_numbering)?,
             entities,
-            models,
+            models: models.into_iter().map(Arc::new).collect(),
             operators: assemblies::read_operators(block)?,
             assemblies: assemblies::read_assemblies(block)?,
         })

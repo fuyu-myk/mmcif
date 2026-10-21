@@ -15,7 +15,9 @@ type AtomKey = (String, i32, String, String, String, String);
 fn atoms(model: &Model) -> Vec<(AtomKey, [f64; 3])> {
     model
         .atoms()
-        .map(|(chain, residue, atom)| {
+        .map(|atom| {
+            let residue = atom.residue();
+            let chain = residue.chain();
             let key = (
                 chain.label_asym().to_string(),
                 residue.auth_seq().get(),

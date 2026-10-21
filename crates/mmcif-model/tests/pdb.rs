@@ -28,7 +28,6 @@ fn splits_chains_into_polymer_ligand_and_water_label_chains() {
     let model = structure.first_model().unwrap();
     let chains: Vec<String> = model
         .chains()
-        .iter()
         .map(|c| {
             format!(
                 "{}:{}:{}",
@@ -43,16 +42,15 @@ fn splits_chains_into_polymer_ligand_and_water_label_chains() {
         ["A:A:5", "B:B:1", "C:A:1", "D:A:1", "E:A:2", "F:B:1"]
     );
     let polymer = model.chain("A").unwrap();
-    let comps: Vec<&str> = polymer
-        .residues()
-        .iter()
-        .map(|r| r.comp().as_str())
-        .collect();
+    let comps: Vec<&str> = polymer.residues().map(|r| r.comp().as_str()).collect();
     assert_eq!(comps, ["GLY", "SER", "ALA", "MSE", "LYS"]);
-    assert!(polymer.residues()[3].is_hetero());
-    assert_eq!(polymer.residues()[2].ins_code(), InsCode::new('A'));
+    assert!(polymer.residues().nth(3).unwrap().is_hetero());
     assert_eq!(
-        polymer.residues()[1].altlocs(),
+        polymer.residues().nth(2).unwrap().ins_code(),
+        InsCode::new('A')
+    );
+    assert_eq!(
+        polymer.residues().nth(1).unwrap().altlocs(),
         [AltLoc::new('A'), AltLoc::new('B')]
     );
 }
@@ -78,7 +76,7 @@ fn synthesises_entities() {
             "5:water:E,F"
         ]
     );
-    let second_model_chain = &structure.models()[1].chains()[0];
+    let second_model_chain = &structure.models()[1].chains().next().unwrap();
     assert_eq!(second_model_chain.entity().unwrap().as_str(), "1");
     assert_eq!(structure.entity("5").unwrap().kind(), &EntityKind::Water);
 }
@@ -87,16 +85,48 @@ fn synthesises_entities() {
 fn reads_atom_columns() {
     let structure = read_pdb(FIXTURE).unwrap();
     let model = structure.first_model().unwrap();
-    let zinc = &model.chain("C").unwrap().residues()[0].atoms()[0];
+    let zinc = &model
+        .chain("C")
+        .unwrap()
+        .residues()
+        .next()
+        .unwrap()
+        .atoms()
+        .next()
+        .unwrap();
     assert_eq!(zinc.element().symbol(), "Zn");
     assert_eq!(zinc.charge(), Some(2));
     assert_eq!(zinc.position(), [0.0, 0.0, 5.0]);
-    let inferred = &model.chain("B").unwrap().residues()[0].atoms()[1];
+    let inferred = &model
+        .chain("B")
+        .unwrap()
+        .residues()
+        .next()
+        .unwrap()
+        .atoms()
+        .nth(1)
+        .unwrap();
     assert_eq!(inferred.element().symbol(), "C");
-    let selenium = model.chain("A").unwrap().residues()[3].atom("SE").unwrap();
+    let selenium = model
+        .chain("A")
+        .unwrap()
+        .residues()
+        .nth(3)
+        .unwrap()
+        .atom("SE")
+        .unwrap();
     assert_eq!(selenium.element().symbol(), "Se");
     assert_eq!(
-        model.chain("A").unwrap().residues()[1].atoms()[1].occupancy(),
+        model
+            .chain("A")
+            .unwrap()
+            .residues()
+            .nth(1)
+            .unwrap()
+            .atoms()
+            .nth(1)
+            .unwrap()
+            .occupancy(),
         0.4
     );
 }
@@ -125,7 +155,6 @@ fn model_residue_has_no_label_seq(structure: &mmcif_model::Structure) -> bool {
         .first_model()
         .unwrap()
         .chains()
-        .iter()
         .flat_map(|c| c.residues())
         .all(|r| r.label_seq().is_none())
 }
@@ -134,9 +163,19 @@ fn model_residue_has_no_label_seq(structure: &mmcif_model::Structure) -> bool {
 fn reads_hybrid36_serials_and_residue_numbers() {
     let line = "ATOM  A0000  CA  GLY AA000       1.000   2.000   3.000  1.00 10.00           C  ";
     let structure = parse_pdb(line).unwrap();
-    let chain = &structure.first_model().unwrap().chains()[0];
-    assert_eq!(chain.residues()[0].auth_seq().get(), 10_000);
-    assert_eq!(chain.residues()[0].atoms()[0].serial(), Some(100_000));
+    let chain = &structure.first_model().unwrap().chains().next().unwrap();
+    assert_eq!(chain.residues().next().unwrap().auth_seq().get(), 10_000);
+    assert_eq!(
+        chain
+            .residues()
+            .next()
+            .unwrap()
+            .atoms()
+            .next()
+            .unwrap()
+            .serial(),
+        Some(100_000)
+    );
 }
 
 #[test]
@@ -195,7 +234,6 @@ fn atom_records_after_ter_start_a_new_polymer_chain() {
         .first_model()
         .unwrap()
         .chains()
-        .iter()
         .map(|c| format!("{}:{}", c.label_asym(), c.residues().len()))
         .collect();
     assert_eq!(chains, ["A:2", "B:3", "C:1"]);

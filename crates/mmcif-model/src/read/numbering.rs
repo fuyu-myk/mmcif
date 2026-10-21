@@ -3,9 +3,9 @@ use mmcif_cif::Block;
 use crate::error::ReadError;
 use crate::ids::{AuthAsymId, AuthSeqId, InsCode, LabelAsymId, LabelSeqId};
 use crate::key::{AuthResidueKey, LabelResidueKey};
+use crate::model::Model;
 use crate::numbering::Numbering;
 use crate::read::table::Table;
-use crate::structure::Model;
 
 pub(crate) fn read_numbering(
     block: &Block<'_>,
@@ -55,22 +55,22 @@ pub(crate) fn read_numbering(
         }
     }
     if let Some(model) = models.first() {
-        for chain in &model.chains {
+        for chain in model.chains() {
             if !has_author_numbering {
-                numbering.insert_label_only(chain.label_asym.clone());
+                numbering.insert_label_only(chain.label_asym().clone());
                 continue;
             }
-            for residue in &chain.residues {
-                let auth = chain.auth_key(residue);
-                match residue.label_seq {
+            for residue in chain.residues() {
+                let auth = residue.auth_key();
+                match residue.label_seq() {
                     Some(seq) => numbering.insert_polymer(
                         LabelResidueKey {
-                            asym: chain.label_asym.clone(),
+                            asym: chain.label_asym().clone(),
                             seq,
                         },
                         auth,
                     ),
-                    None => numbering.insert_non_polymer(chain.label_asym.clone(), auth),
+                    None => numbering.insert_non_polymer(chain.label_asym().clone(), auth),
                 }
             }
         }

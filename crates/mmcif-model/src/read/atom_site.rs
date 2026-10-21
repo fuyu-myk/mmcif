@@ -4,11 +4,11 @@ use mmcif_cif::Block;
 
 use crate::error::ReadError;
 use crate::ids::{
-    AltLoc, AtomName, AuthAsymId, AuthSeqId, CompId, Element, EntityId, InsCode, LabelAsymId,
-    LabelSeqId, ModelNumber,
+    AltLoc, AuthAsymId, AuthSeqId, CompId, Element, EntityId, InsCode, LabelAsymId, LabelSeqId,
+    ModelNumber,
 };
+use crate::model::{AtomInput, ChainSlot, Model, ModelBuilder, ResidueSlot};
 use crate::read::table::{Field, Table};
-use crate::structure::{Atom, Chain, Model, Residue};
 
 struct AtomSiteFields<'a> {
     group: Field<'a>,
@@ -112,15 +112,15 @@ impl<'a> AtomSiteFields<'a> {
         Element::parse(text).ok_or_else(|| self.element.invalid(row, text, "not an element symbol"))
     }
 
-    fn atom(&self, row: usize) -> Result<Atom, ReadError> {
+    fn atom(&self, row: usize) -> Result<AtomInput<'a>, ReadError> {
         let position = [
             self.x.required_parse(row)?,
             self.y.required_parse(row)?,
             self.z.required_parse(row)?,
         ];
-        Ok(Atom {
+        Ok(AtomInput {
             serial: self.serial.parse(row)?,
-            name: AtomName::new(self.preferred_text(&self.atom_name, &self.auth_atom_name, row)?),
+            name: self.preferred_text(&self.atom_name, &self.auth_atom_name, row)?,
             element: self.element(row)?,
             altloc: self
                 .altloc
@@ -135,20 +135,14 @@ impl<'a> AtomSiteFields<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ResidueSlot {
+struct ResidueGroup {
     label_seq: Option<LabelSeqId>,
     auth_seq: AuthSeqId,
     ins_code: InsCode,
     comp: CompId,
 }
 
-struct ChainBuilder {
-    chain: Chain,
-    slots: HashMap<ResidueSlot, usize>,
-    last_slot: Option<(ResidueSlot, usize)>,
-}
-
-impl ResidueSlot {
+impl ResidueGroup {
     fn matches(
         &self,
         label_seq: Option<LabelSeqId>,
@@ -163,90 +157,97 @@ impl ResidueSlot {
     }
 }
 
-struct ModelBuilder {
-    number: ModelNumber,
-    chains: Vec<ChainBuilder>,
+struct ChainState {
+    slot: ChainSlot,
+    residues: HashMap<ResidueGroup, ResidueSlot>,
+    last: Option<(ResidueGroup, ResidueSlot)>,
+}
+
+struct ModelState {
+    builder: ModelBuilder,
+    chains: Vec<ChainState>,
     chain_index: HashMap<Box<str>, usize>,
 }
 
-impl ModelBuilder {
+struct ResidueInput<'a> {
+    label_seq: Option<LabelSeqId>,
+    auth_seq: AuthSeqId,
+    ins_code: InsCode,
+    comp: &'a str,
+    hetero: bool,
+}
+
+impl ModelState {
+    fn new(number: i32) -> Self {
+        ModelState {
+            builder: ModelBuilder::new(ModelNumber::new(number)),
+            chains: Vec::new(),
+            chain_index: HashMap::new(),
+        }
+    }
+
     fn chain_for(
         &mut self,
         label_asym: &str,
         auth_asym: &str,
         entity: Option<&str>,
-    ) -> Result<&mut ChainBuilder, ReadError> {
+    ) -> Result<usize, ReadError> {
         let index = match self.chain_index.get(label_asym) {
             Some(&index) => index,
             None => {
-                let chain = Chain::new(
+                let slot = self.builder.new_chain(
                     LabelAsymId::new(label_asym),
                     AuthAsymId::new(auth_asym),
                     entity.map(EntityId::new),
+                    Vec::new(),
                 );
-                self.chains.push(ChainBuilder {
-                    chain,
-                    slots: HashMap::new(),
-                    last_slot: None,
+                self.chains.push(ChainState {
+                    slot,
+                    residues: HashMap::new(),
+                    last: None,
                 });
                 self.chain_index
                     .insert(label_asym.into(), self.chains.len() - 1);
                 self.chains.len() - 1
             }
         };
-        let builder = &mut self.chains[index];
-        let chain = &builder.chain;
-        if chain.auth_asym.as_str() != auth_asym {
+        let record = self.builder.chain_record(self.chains[index].slot);
+        if record.auth_asym.as_str() != auth_asym {
             return Err(ReadError::InconsistentAuthChain {
-                label_asym: chain.label_asym.clone(),
-                first: chain.auth_asym.clone(),
+                label_asym: record.label_asym.clone(),
+                first: record.auth_asym.clone(),
                 second: AuthAsymId::new(auth_asym),
             });
         }
-        Ok(builder)
+        Ok(index)
     }
 
-    fn finish(self) -> Model {
-        let chains = self
-            .chains
-            .into_iter()
-            .map(|builder| builder.chain)
-            .collect();
-        Model::new(self.number, chains)
-    }
-}
-
-impl ChainBuilder {
-    fn residue_for(
-        &mut self,
-        label_seq: Option<LabelSeqId>,
-        auth_seq: AuthSeqId,
-        ins_code: InsCode,
-        comp: &str,
-        hetero: bool,
-    ) -> &mut Residue {
-        let index = match &self.last_slot {
-            Some((last, index)) if last.matches(label_seq, auth_seq, ins_code, comp) => *index,
-            _ => {
-                let slot = ResidueSlot {
-                    label_seq,
-                    auth_seq,
-                    ins_code,
-                    comp: CompId::new(comp),
-                };
-                let residues = &mut self.chain.residues;
-                let index = *self.slots.entry(slot.clone()).or_insert_with(|| {
-                    let mut residue =
-                        Residue::new(slot.comp.clone(), label_seq, auth_seq, ins_code);
-                    residue.hetero = hetero;
-                    residues.push(residue);
-                    residues.len() - 1
-                });
-                self.last_slot = Some((slot, index));
-                index
-            }
+    fn residue_for(&mut self, chain: usize, input: ResidueInput<'_>) -> ResidueSlot {
+        let state = &mut self.chains[chain];
+        if let Some((last, slot)) = &state.last
+            && last.matches(input.label_seq, input.auth_seq, input.ins_code, input.comp)
+        {
+            return *slot;
+        }
+        let group = ResidueGroup {
+            label_seq: input.label_seq,
+            auth_seq: input.auth_seq,
+            ins_code: input.ins_code,
+            comp: CompId::new(input.comp),
         };
-        &mut self.chain.residues[index]
+        let builder = &mut self.builder;
+        let slot = *state.residues.entry(group.clone()).or_insert_with(|| {
+            builder.new_residue(
+                state.slot,
+                group.comp.clone(),
+                group.label_seq,
+                group.auth_seq,
+                group.ins_code,
+                input.hetero,
+            )
+        });
+        state.last = Some((group, slot));
+        slot
     }
 }
 
@@ -258,40 +259,48 @@ pub(crate) struct AtomSite {
 pub(crate) fn read_models(block: &Block<'_>) -> Result<AtomSite, ReadError> {
     let table = Table::required(block, "atom_site")?;
     let fields = AtomSiteFields::new(&table)?;
-    let mut models: Vec<ModelBuilder> = Vec::new();
+    let rows = table.rows();
+    let single_model =
+        rows == 0 || fields.model.parse::<i32>(0)? == fields.model.parse::<i32>(rows - 1)?;
+    let mut models: Vec<ModelState> = Vec::new();
     let mut model_index: HashMap<i32, usize> = HashMap::new();
-    for row in 0..table.rows() {
+    for row in 0..rows {
         let number = fields.model.parse::<i32>(row)?.unwrap_or(1);
         let index = *model_index.entry(number).or_insert_with(|| {
-            models.push(ModelBuilder {
-                number: ModelNumber::new(number),
-                chains: Vec::new(),
-                chain_index: HashMap::new(),
-            });
+            let mut state = ModelState::new(number);
+            if single_model && models.is_empty() {
+                state.builder.reserve_atoms(rows);
+            }
+            models.push(state);
             models.len() - 1
         });
+        let model = &mut models[index];
         let label_asym = fields.label_asym.required_text(row)?;
         let auth_asym = fields.auth_asym(row, label_asym)?;
-        let chain = models[index].chain_for(label_asym, auth_asym, fields.entity.text(row))?;
+        let chain = model.chain_for(label_asym, auth_asym, fields.entity.text(row))?;
         let label_seq = fields.label_seq(row)?;
-        let auth_seq = fields.auth_seq(row, label_seq)?;
-        let ins_code = fields
-            .ins_code
-            .single_char(row)?
-            .map_or(InsCode::NONE, InsCode::new);
-        let comp = fields.preferred_text(&fields.comp, &fields.auth_comp, row)?;
-        let hetero = fields
-            .group
-            .text(row)
-            .is_some_and(|group| group.eq_ignore_ascii_case("HETATM"));
+        let residue = ResidueInput {
+            label_seq,
+            auth_seq: fields.auth_seq(row, label_seq)?,
+            ins_code: fields
+                .ins_code
+                .single_char(row)?
+                .map_or(InsCode::NONE, InsCode::new),
+            comp: fields.preferred_text(&fields.comp, &fields.auth_comp, row)?,
+            hetero: fields
+                .group
+                .text(row)
+                .is_some_and(|group| group.eq_ignore_ascii_case("HETATM")),
+        };
         let atom = fields.atom(row)?;
-        chain
-            .residue_for(label_seq, auth_seq, ins_code, comp, hetero)
-            .atoms
-            .push(atom);
+        let slot = model.residue_for(chain, residue);
+        model.builder.push_atom(slot, atom);
     }
     Ok(AtomSite {
-        models: models.into_iter().map(ModelBuilder::finish).collect(),
+        models: models
+            .into_iter()
+            .map(|state| state.builder.finish())
+            .collect(),
         has_author_numbering: fields.has_author_numbering(),
     })
 }

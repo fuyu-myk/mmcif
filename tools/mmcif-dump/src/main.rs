@@ -14,7 +14,9 @@ fn code(value: Option<char>) -> String {
 fn dump_model(model: &Model) -> Value {
     let atoms: Vec<Value> = model
         .atoms()
-        .map(|(chain, residue, atom)| {
+        .map(|atom| {
+            let residue = atom.residue();
+            let chain = residue.chain();
             let [x, y, z] = atom.position();
             json!([
                 chain.auth_asym().as_str(),
@@ -35,9 +37,8 @@ fn dump_model(model: &Model) -> Value {
         .collect();
     let residues: Vec<Value> = model
         .chains()
-        .iter()
         .flat_map(|chain| {
-            chain.residues().iter().map(move |residue| {
+            chain.residues().map(move |residue| {
                 json!([
                     chain.auth_asym().as_str(),
                     chain.label_asym().as_str(),
@@ -65,14 +66,9 @@ fn dump_assemblies(structure: &Structure) -> Result<Vec<Value>, String> {
                 .map_err(|error| error.to_string())?;
             let copies: Vec<Value> = assembled
                 .chains()
-                .iter()
                 .filter(|chain| chain.atom_count() > 0)
                 .map(|chain| {
-                    let positions: Vec<[f64; 3]> = chain
-                        .residues()
-                        .iter()
-                        .flat_map(|residue| residue.atoms().iter().map(|atom| atom.position()))
-                        .collect();
+                    let positions = chain.positions();
                     let count = positions.len() as f64;
                     let centroid = [0, 1, 2]
                         .map(|axis| round3(positions.iter().map(|p| p[axis]).sum::<f64>() / count));
@@ -106,7 +102,7 @@ fn dump(structure: &Structure) -> Result<Value, String> {
         .collect();
     Ok(json!({
         "entry": structure.entry_id(),
-        "models": structure.models().iter().map(dump_model).collect::<Vec<_>>(),
+        "models": structure.models().iter().map(|model| dump_model(model)).collect::<Vec<_>>(),
         "entities": entities,
         "assemblies": dump_assemblies(structure)?,
     }))

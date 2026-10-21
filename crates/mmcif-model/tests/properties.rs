@@ -89,10 +89,10 @@ proptest! {
         let model = structure.first_model().unwrap();
         let chain = model.chain("A").unwrap();
         prop_assert_eq!(chain.residues().len(), generated.len());
-        for (index, residue) in chain.residues().iter().enumerate() {
+        for (index, residue) in chain.residues().enumerate() {
             let label = LabelResidueKey { asym: "A".into(), seq: LabelSeqId::new(index as u32 + 1).unwrap() };
             let auth = structure.numbering().to_auth(&label).unwrap();
-            prop_assert_eq!(&auth, &chain.auth_key(residue));
+            prop_assert_eq!(&auth, &residue.auth_key());
             prop_assert_eq!(structure.numbering().to_label(&auth).unwrap(), label);
         }
     }
@@ -103,8 +103,10 @@ proptest! {
         let model = structure.first_model().unwrap();
         let assembled = structure.assemble(&AssemblyId::new("1"), model).unwrap();
         prop_assert_eq!(assembled.chains().len(), model.chains().len());
-        for (copy, original) in assembled.chains().iter().zip(model.chains()) {
-            prop_assert_eq!(copy.residues(), original.residues());
+        for (copy, original) in assembled.chains().zip(model.chains()) {
+            let keys = |chain: mmcif_model::ChainRef<'_>| chain.residues().map(|r| r.key()).collect::<Vec<_>>();
+            prop_assert_eq!(keys(copy), keys(original));
+            prop_assert_eq!(copy.positions(), original.positions());
         }
     }
 
@@ -115,13 +117,13 @@ proptest! {
         for policy in [AltlocPolicy::First, AltlocPolicy::HighestOccupancy] {
             let selected = model.single_conformer(policy);
             prop_assert!(selected.atom_count() <= model.atom_count());
-            for residue in selected.chains().iter().flat_map(|c| c.residues()) {
+            for residue in selected.chains().flat_map(|c| c.residues()) {
                 prop_assert!(residue.altlocs().len() <= 1);
             }
-            let untouched = |residues: &[mmcif_model::Residue]| residues.iter().filter(|r| r.altlocs().is_empty()).count();
+            let untouched = |chain: mmcif_model::ChainRef<'_>| chain.residues().filter(|r| r.altlocs().is_empty()).count();
             prop_assert_eq!(
-                untouched(selected.chain("A").unwrap().residues()),
-                untouched(model.chain("A").unwrap().residues())
+                untouched(selected.chain("A").unwrap()),
+                untouched(model.chain("A").unwrap())
             );
         }
     }

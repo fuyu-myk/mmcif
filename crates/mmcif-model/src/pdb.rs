@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::entity::{Entity, EntityKind};
 use crate::error::ReadError;
 use crate::ids::{
-    AltLoc, AtomName, AuthAsymId, AuthSeqId, CompId, Element, EntityId, InsCode, LabelAsymId,
-    ModelNumber,
+    AltLoc, AuthAsymId, AuthSeqId, CompId, Element, EntityId, InsCode, LabelAsymId, ModelNumber,
 };
+use crate::key::AuthResidueKey;
+use crate::model::{AtomInput, Model, ModelBuilder};
 use crate::numbering::Numbering;
-use crate::structure::{Atom, Chain, Model, Residue, Structure};
+use crate::structure::Structure;
 
 const WATER_NAMES: [&str; 4] = ["HOH", "WAT", "DOD", "H2O"];
 
@@ -140,10 +142,46 @@ fn infer_element(name: &str, hetero: bool) -> Option<Element> {
     Element::parse(&first.to_string())
 }
 
+struct PdbAtom {
+    serial: Option<i64>,
+    name: String,
+    element: Element,
+    altloc: AltLoc,
+    position: [f64; 3],
+    occupancy: f64,
+    b_factor: f64,
+    charge: Option<i8>,
+}
+
+struct PdbResidueData {
+    comp: CompId,
+    auth_seq: AuthSeqId,
+    ins_code: InsCode,
+    hetero: bool,
+    atoms: Vec<PdbAtom>,
+}
+
 struct PdbResidue {
     chain: AuthAsymId,
     segment: u32,
-    residue: Residue,
+    residue: PdbResidueData,
+}
+
+struct PdbChain {
+    label_asym: LabelAsymId,
+    auth_asym: AuthAsymId,
+    entity: Option<EntityId>,
+    residues: Vec<PdbResidueData>,
+}
+
+impl PdbChain {
+    fn auth_key(&self, residue: &PdbResidueData) -> AuthResidueKey {
+        AuthResidueKey {
+            chain: self.auth_asym.clone(),
+            seq: residue.auth_seq,
+            ins_code: residue.ins_code,
+        }
+    }
 }
 
 struct PdbModel {
@@ -177,11 +215,11 @@ impl PdbModel {
             Element::parse(element_field)
         }
         .ok_or_else(|| line.error("missing or invalid element"))?;
-        let atom = Atom {
+        let atom = PdbAtom {
             serial: line.optional(6, 11, "invalid atom serial", |field| {
                 decode_hybrid36(field, 5)
             })?,
-            name: AtomName::new(name_columns.trim()),
+            name: name_columns.trim().to_owned(),
             element,
             altloc: line.code(16)?.map_or(AltLoc::NONE, AltLoc::new),
             position: [
@@ -202,9 +240,13 @@ impl PdbModel {
                 && last.residue.comp.as_str() == comp
         });
         if !continues {
-            let mut residue =
-                Residue::new(CompId::new(comp), None, AuthSeqId::new(auth_seq), ins_code);
-            residue.hetero = hetero;
+            let residue = PdbResidueData {
+                comp: CompId::new(comp),
+                auth_seq: AuthSeqId::new(auth_seq),
+                ins_code,
+                hetero,
+                atoms: Vec::new(),
+            };
             self.residues.push(PdbResidue {
                 segment,
                 chain,
@@ -283,9 +325,9 @@ fn label_asym_name(index: usize) -> String {
     }
 }
 
-fn build_model(model: PdbModel) -> (Model, Vec<Role>) {
+fn group_chains(model: PdbModel) -> (Vec<PdbChain>, Vec<Role>) {
     let roles = roles(&model);
-    let mut chains: Vec<(Role, Chain)> = Vec::new();
+    let mut chains: Vec<(Role, PdbChain)> = Vec::new();
     let mut grouped_chains: HashMap<(Role, AuthAsymId, u32), usize> = HashMap::new();
     for (entry, role) in model.residues.into_iter().zip(&roles) {
         let group = match role {
@@ -297,14 +339,24 @@ fn build_model(model: PdbModel) -> (Model, Vec<Role>) {
             Some(key) => *grouped_chains.entry(key).or_insert_with(|| {
                 chains.push((
                     *role,
-                    Chain::new(LabelAsymId::new(""), entry.chain.clone(), None),
+                    PdbChain {
+                        label_asym: LabelAsymId::new(""),
+                        auth_asym: entry.chain.clone(),
+                        entity: None,
+                        residues: Vec::new(),
+                    },
                 ));
                 chains.len() - 1
             }),
             None => {
                 chains.push((
                     *role,
-                    Chain::new(LabelAsymId::new(""), entry.chain.clone(), None),
+                    PdbChain {
+                        label_asym: LabelAsymId::new(""),
+                        auth_asym: entry.chain.clone(),
+                        entity: None,
+                        residues: Vec::new(),
+                    },
                 ));
                 chains.len() - 1
             }
@@ -321,21 +373,51 @@ fn build_model(model: PdbModel) -> (Model, Vec<Role>) {
     let chains = chains
         .into_iter()
         .enumerate()
-        .map(|(index, (_, chain))| Chain {
+        .map(|(index, (_, chain))| PdbChain {
             label_asym: LabelAsymId::new(label_asym_name(index)),
             ..chain
         })
         .collect();
-    (
-        Model::new(ModelNumber::new(model.number), chains),
-        chain_roles,
-    )
+    (chains, chain_roles)
 }
 
-fn assign_entities(model: &mut Model, roles: &[Role]) -> Vec<Entity> {
+fn into_model(number: i32, chains: Vec<PdbChain>) -> Model {
+    let mut builder = ModelBuilder::new(ModelNumber::new(number));
+    for chain in chains {
+        let slot = builder.new_chain(chain.label_asym, chain.auth_asym, chain.entity, Vec::new());
+        for residue in chain.residues {
+            let residue_slot = builder.new_residue(
+                slot,
+                residue.comp,
+                None,
+                residue.auth_seq,
+                residue.ins_code,
+                residue.hetero,
+            );
+            for atom in residue.atoms {
+                builder.push_atom(
+                    residue_slot,
+                    AtomInput {
+                        serial: atom.serial,
+                        name: &atom.name,
+                        element: atom.element,
+                        altloc: atom.altloc,
+                        position: atom.position,
+                        occupancy: atom.occupancy,
+                        b_factor: atom.b_factor,
+                        charge: atom.charge,
+                    },
+                );
+            }
+        }
+    }
+    builder.finish()
+}
+
+fn assign_entities(chains: &mut [PdbChain], roles: &[Role]) -> Vec<Entity> {
     let mut entities: Vec<Entity> = Vec::new();
     let mut by_content: HashMap<(u8, Vec<CompId>), usize> = HashMap::new();
-    for (chain, role) in model.chains.iter_mut().zip(roles) {
+    for (chain, role) in chains.iter_mut().zip(roles) {
         let (code, kind, content) = match role {
             Role::Polymer => (
                 0,
@@ -366,9 +448,9 @@ fn assign_entities(model: &mut Model, roles: &[Role]) -> Vec<Entity> {
     entities
 }
 
-fn build_numbering(model: &Model, roles: &[Role]) -> Numbering {
+fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
     let mut numbering = Numbering::default();
-    for (chain, role) in model.chains.iter().zip(roles) {
+    for (chain, role) in chains.iter().zip(roles) {
         for residue in &chain.residues {
             let auth = chain.auth_key(residue);
             match role {
@@ -422,21 +504,21 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
     let mut numbering = Numbering::default();
     let mut label_entities: HashMap<LabelAsymId, EntityId> = HashMap::new();
     for (index, pdb_model) in finished.into_iter().enumerate() {
-        let (mut model, roles) = build_model(pdb_model);
+        let number = pdb_model.number;
+        let (mut chains, roles) = group_chains(pdb_model);
         if index == 0 {
-            entities = assign_entities(&mut model, &roles);
-            numbering = build_numbering(&model, &roles);
-            label_entities = model
-                .chains
+            entities = assign_entities(&mut chains, &roles);
+            numbering = build_numbering(&chains, &roles);
+            label_entities = chains
                 .iter()
                 .filter_map(|chain| Some((chain.label_asym.clone(), chain.entity.clone()?)))
                 .collect();
         } else {
-            for chain in &mut model.chains {
+            for chain in &mut chains {
                 chain.entity = label_entities.get(&chain.label_asym).cloned();
             }
         }
-        models.push(model);
+        models.push(Arc::new(into_model(number, chains)));
     }
     Ok(Structure {
         entry_id,

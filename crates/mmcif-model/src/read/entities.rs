@@ -8,8 +8,8 @@ use crate::entity::{
 };
 use crate::error::ReadError;
 use crate::ids::{AtomName, CompId, EntityId, LabelAsymId, LabelSeqId};
+use crate::model::Model;
 use crate::read::table::Table;
-use crate::structure::Model;
 
 pub(crate) fn read_entities(block: &Block<'_>, models: &[Model]) -> Result<Vec<Entity>, ReadError> {
     let Some(table) = Table::optional(block, "entity") else {
