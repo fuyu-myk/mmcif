@@ -27,6 +27,8 @@ pub enum ParseErrorKind {
     UnexpectedValue,
     #[error("loop_ has no tags")]
     EmptyLoop,
+    #[error("tag {0} appears more than once")]
+    DuplicateTag(String),
     #[error("loop has {values} values for {tags} tags")]
     RaggedLoop { values: usize, tags: usize },
     #[error("save frame inside a save frame")]

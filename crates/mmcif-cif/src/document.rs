@@ -219,7 +219,7 @@ impl<'a> Block<'a> {
             |tag: Span| category_of(tag.resolve(src)).filter(|c| c.eq_ignore_ascii_case(name));
         for raw in &self.raw.entries {
             if let RawEntry::Loop(lp) = raw
-                && let Some(found) = lp.tags.first().and_then(|&tag| matching(tag))
+                && let Some(found) = lp.tags.iter().find_map(|&tag| matching(tag))
             {
                 return Some(Category {
                     src,
@@ -247,12 +247,12 @@ impl<'a> Block<'a> {
 
     pub fn category_names(&self) -> Vec<&'a str> {
         let mut names: Vec<&'a str> = Vec::new();
-        for entry in self.entries() {
-            let tag = match entry {
-                Entry::Pair(pair) => pair.tag(),
-                Entry::Loop(lp) => lp.tags().next().unwrap_or_default(),
-                Entry::Frame(_) => continue,
-            };
+        let tags = self.entries().flat_map(|entry| match entry {
+            Entry::Pair(pair) => vec![pair.tag()],
+            Entry::Loop(lp) => lp.tags().collect(),
+            Entry::Frame(_) => Vec::new(),
+        });
+        for tag in tags {
             if let Some(name) = category_of(tag)
                 && !names.iter().any(|n| n.eq_ignore_ascii_case(name))
             {
@@ -442,10 +442,20 @@ impl<'a> Category<'a> {
         }
     }
 
+    fn owns(&self, tag: &str) -> bool {
+        category_of(tag).is_some_and(|category| category.eq_ignore_ascii_case(self.name))
+    }
+
     pub fn items(&self) -> Vec<&'a str> {
         let src = self.src;
         match &self.layout {
-            Layout::Loop(lp) => lp.tags.iter().map(|t| item_of(t.resolve(src))).collect(),
+            Layout::Loop(lp) => lp
+                .tags
+                .iter()
+                .map(|t| t.resolve(src))
+                .filter(|tag| self.owns(tag))
+                .map(item_of)
+                .collect(),
             Layout::Pairs(pairs) => pairs.iter().map(|(t, _)| item_of(t.resolve(src))).collect(),
         }
     }
@@ -456,7 +466,10 @@ impl<'a> Category<'a> {
 
     pub fn column(&self, item: &str) -> Option<Column<'a>> {
         let src = self.src;
-        let matches = |tag: &Span| item_of(tag.resolve(src)).eq_ignore_ascii_case(item);
+        let matches = |tag: &Span| {
+            let tag = tag.resolve(src);
+            self.owns(tag) && item_of(tag).eq_ignore_ascii_case(item)
+        };
         let cells = match &self.layout {
             Layout::Loop(lp) => ColumnCells::Strided {
                 cells: &lp.cells,

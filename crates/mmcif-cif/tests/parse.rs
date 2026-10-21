@@ -189,3 +189,29 @@ fn empty_input_has_no_blocks() {
     assert!(parse("").is_empty());
     assert!(parse("# only a comment\n").is_empty());
 }
+
+#[test]
+fn rejects_duplicate_tags_case_insensitively() {
+    assert_eq!(
+        error_kind("data_x\n_a.b 1\n_A.B 2\n"),
+        ParseErrorKind::DuplicateTag("_A.B".into())
+    );
+    assert_eq!(
+        error_kind("data_x\nloop_\n_a.x\n1\nloop_\n_a.x\n2\n"),
+        ParseErrorKind::DuplicateTag("_a.x".into())
+    );
+    assert!(Document::parse("data_x\n_a.b 1\nsave_f\n_a.b 2\nsave_\ndata_y\n_a.b 3\n").is_ok());
+}
+
+#[test]
+fn loop_columns_belong_to_their_own_category() {
+    let document = parse("data_x\nloop_\n_c.x\n_d.y\n1 2\n3 4\n");
+    let block = document.block(0).unwrap();
+    let c = block.category("c").unwrap();
+    assert_eq!(c.items(), ["x"]);
+    assert!(c.column("y").is_none());
+    let d = block.category("d").unwrap();
+    let ys: Vec<_> = d.column("y").unwrap().iter().map(|v| v.raw()).collect();
+    assert_eq!(ys, ["2", "4"]);
+    assert_eq!(block.category_names(), ["c", "d"]);
+}

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::document::{Cell, Document, RawBlock, RawEntry, RawLoop, Span};
 use crate::value::{InvalidValue, Value};
 
@@ -15,6 +17,8 @@ pub enum BuildError {
     InvalidValue(#[from] InvalidValue),
     #[error("loop_ has no tags")]
     EmptyLoop,
+    #[error("tag {0} appears more than once in the block")]
+    DuplicateTag(String),
     #[error("loop_ has no rows")]
     LoopWithoutRows,
     #[error("loop has {values} values for {tags} tags")]
@@ -28,6 +32,7 @@ pub struct DocumentBuilder {
     text: String,
     blocks: Vec<RawBlock>,
     open_loop: Option<RawLoop>,
+    block_tags: HashSet<String>,
 }
 
 fn is_name_token(name: &str) -> bool {
@@ -96,6 +101,7 @@ impl DocumentBuilder {
             return Err(BuildError::InvalidBlockName(name.to_owned()));
         }
         let name = self.store_span(name)?;
+        self.block_tags.clear();
         self.blocks.push(RawBlock {
             name,
             entries: Vec::new(),
@@ -106,6 +112,9 @@ impl DocumentBuilder {
     fn tag_span(&mut self, tag: &str) -> Result<Span, BuildError> {
         if !tag.starts_with('_') || !is_name_token(tag) {
             return Err(BuildError::InvalidTag(tag.to_owned()));
+        }
+        if !self.block_tags.insert(tag.to_ascii_lowercase()) {
+            return Err(BuildError::DuplicateTag(tag.to_owned()));
         }
         self.store_span(tag)
     }
@@ -196,6 +205,19 @@ mod tests {
             builder.finish().unwrap_err(),
             BuildError::RaggedLoop { values: 1, tags: 2 }
         );
+    }
+
+    #[test]
+    fn rejects_duplicate_tags_within_a_block() {
+        let mut builder = DocumentBuilder::new();
+        builder.start_block("a").unwrap();
+        builder.pair("_x.y", Value::UNKNOWN).unwrap();
+        assert_eq!(
+            builder.start_loop(["_X.Y"]),
+            Err(BuildError::DuplicateTag("_X.Y".into()))
+        );
+        builder.start_block("b").unwrap();
+        builder.pair("_x.y", Value::UNKNOWN).unwrap();
     }
 
     #[test]

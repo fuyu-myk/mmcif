@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::document::{Cell, RawBlock, RawEntry, RawFrame, RawLoop, Span, StreamedBlock};
 use crate::error::{ParseError, ParseErrorKind};
 use crate::token::{Token, TokenKind, Tokenizer};
@@ -67,6 +69,8 @@ impl<'a> Parser<'a> {
         }
         let mut entries = Vec::new();
         let mut frame: Option<(Token, Vec<RawEntry>)> = None;
+        let mut block_tags = HashSet::new();
+        let mut frame_tags = HashSet::new();
         while let Some(token) = self.peek()? {
             if token.kind == TokenKind::Data {
                 break;
@@ -80,6 +84,12 @@ impl<'a> Parser<'a> {
                         }
                         _ => return Err(self.error(token.start, ParseErrorKind::MissingValue)),
                     };
+                    let tags = if frame.is_some() {
+                        &mut frame_tags
+                    } else {
+                        &mut block_tags
+                    };
+                    self.claim(tags, Self::span(token))?;
                     let target = frame
                         .as_mut()
                         .map_or(&mut entries, |(_, frame_entries)| frame_entries);
@@ -90,6 +100,14 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Loop => {
                     let raw_loop = self.parse_loop(token)?;
+                    let tags = if frame.is_some() {
+                        &mut frame_tags
+                    } else {
+                        &mut block_tags
+                    };
+                    for &tag in &raw_loop.tags {
+                        self.claim(tags, tag)?;
+                    }
                     let target = frame
                         .as_mut()
                         .map_or(&mut entries, |(_, frame_entries)| frame_entries);
@@ -107,6 +125,7 @@ impl<'a> Parser<'a> {
                         return Err(self.error(token.start, ParseErrorKind::NestedSaveFrame));
                     }
                     frame = Some((token, Vec::new()));
+                    frame_tags.clear();
                 }
                 TokenKind::Value(_) => {
                     return Err(self.error(token.start, ParseErrorKind::UnexpectedValue));
@@ -127,6 +146,18 @@ impl<'a> Parser<'a> {
             name: Self::span(header),
             entries,
         }))
+    }
+
+    fn claim(&self, seen: &mut HashSet<String>, tag: Span) -> Result<(), ParseError> {
+        let text = tag.resolve(self.src);
+        if seen.insert(text.to_ascii_lowercase()) {
+            Ok(())
+        } else {
+            Err(self.error(
+                tag.start as usize,
+                ParseErrorKind::DuplicateTag(text.to_owned()),
+            ))
+        }
     }
 
     fn parse_loop(&mut self, keyword: Token) -> Result<RawLoop, ParseError> {
