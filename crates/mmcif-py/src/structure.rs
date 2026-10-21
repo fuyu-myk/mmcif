@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mmcif_model::{
@@ -9,7 +9,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 
 use crate::document::PyDocument;
-use crate::errors::{assembly_error, numbering_error, read_error};
+use crate::errors::{assembly_error, model_error, numbering_error, read_error};
 use crate::hierarchy::PyModel;
 
 #[pyclass(name = "Structure", module = "mmcif_io", frozen)]
@@ -25,24 +25,32 @@ fn wrap(result: Result<Structure, ReadError>) -> PyResult<PyStructure> {
         .map_err(read_error)
 }
 
+fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStructure> {
+    result
+        .map(|structure| PyStructure {
+            inner: Arc::new(structure),
+        })
+        .map_err(|error| model_error(error, path))
+}
+
 #[pyfunction]
 pub fn read(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::read(path)))
+    wrap_at(py.detach(|| mmcif_model::read(&path)), &path)
 }
 
 #[pyfunction]
 pub fn read_mmcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::read_mmcif(path)))
+    wrap_at(py.detach(|| mmcif_model::read_mmcif(&path)), &path)
 }
 
 #[pyfunction]
 pub fn read_bcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::read_bcif(path)))
+    wrap_at(py.detach(|| mmcif_model::read_bcif(&path)), &path)
 }
 
 #[pyfunction]
 pub fn read_pdb(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::read_pdb(path)))
+    wrap_at(py.detach(|| mmcif_model::read_pdb(&path)), &path)
 }
 
 #[pyfunction]

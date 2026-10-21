@@ -15,7 +15,7 @@ def test_hierarchy(structure):
     assert structure.entry_id == "TEST"
     assert [model.number for model in structure.models] == [1, 2]
     model = structure.models[0]
-    assert model.atom_count == 16 and len(model) == 16
+    assert model.atom_count == 16 and len(model) == 4
     assert [chain.label_asym for chain in model.chains] == ["AA", "B", "C", "D"]
     chain = model.chain("AA")
     assert chain.auth_asym == "H1"
@@ -60,7 +60,7 @@ def test_struct_of_arrays_columns(structure):
     assert model.altlocs[:4] == ["A", "A", "B", "B"]
     assert model.occupancies.shape == (16,)
     residues = model.residue_indices
-    for residue in model.residues:
+    for residue in model.residues():
         start, end = residue.atom_range
         assert (residues[start:end] == residue.index).all()
     chain = model.chain("D")
@@ -109,10 +109,28 @@ def test_handles_outlive_their_structure(pathologies_path):
 def test_handle_identity(structure):
     model = structure.models[0]
     first = model.chain("AA").residues[0]
-    again = model.residues[0]
+    again = model.residues()[0]
     assert first == again and hash(first) == hash(again)
-    assert first != model.residues[1]
+    assert first != model.residues()[1]
     assert len({first, again}) == 1
+    assert structure.models[0] == structure.models[0]
+    assert hash(model.chain("AA").model) == hash(model)
+    assert structure.models[0] != structure.models[1]
+
+
+def test_missing_files_raise_os_errors(tmp_path):
+    missing = tmp_path / "missing.cif"
+    with pytest.raises(FileNotFoundError) as raised:
+        m.read(missing)
+    assert raised.value.filename == str(missing)
+    with pytest.raises(FileNotFoundError):
+        m.Document.open(missing)
+    with pytest.raises(FileNotFoundError):
+        m.CcdIndex.open(missing)
+    directory = tmp_path / "directory.cif"
+    directory.mkdir()
+    with pytest.raises(OSError):
+        m.read_mmcif(directory)
 
 
 def test_read_errors(tmp_path):

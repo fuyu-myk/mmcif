@@ -43,8 +43,17 @@ def test_round_trip_and_handles_outlive_document():
 def test_document_errors(tmp_path):
     with pytest.raises(m.ReadError, match="line 2"):
         m.Document.parse("data_x\n_a.b\n")
-    with pytest.raises(m.ReadError):
+    with pytest.raises(FileNotFoundError):
         m.Document.open(tmp_path / "missing.cif")
+    with pytest.raises(m.ReadError, match="appears more than once"):
+        m.Document.parse("data_x\n_a.b 1\n_a.b 2\n")
+
+
+def test_categories_named_with_a_leading_underscore():
+    block = m.Document.parse("data_a\n__x.y 1\n").blocks[0]
+    assert block.category_names == ["_x"]
+    assert block.category("_x").row_count == 1
+    assert "_x" in block
     with pytest.raises(m.ReadError):
         m.Document.from_bcif(b"\x00\x01")
 

@@ -100,7 +100,6 @@ impl PyModel {
             .map(|chain| self.chain_object(chain.index()))
     }
 
-    #[getter]
     fn residues(&self) -> Vec<PyResidue> {
         self.inner
             .residues()
@@ -158,12 +157,7 @@ impl PyModel {
 
     #[getter]
     fn residue_indices<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u32>> {
-        let mut indices = vec![0u32; self.inner.atom_count()];
-        for residue in self.inner.residues() {
-            let index = residue.index().get() as u32;
-            indices[residue.atom_range()].fill(index);
-        }
-        PyArray1::from_vec(py, indices)
+        PyArray1::from_slice(py, self.inner.atom_residue_indices())
     }
 
     #[getter]
@@ -187,7 +181,15 @@ impl PyModel {
     }
 
     fn __len__(&self) -> usize {
-        self.inner.atom_count()
+        self.inner.chain_count()
+    }
+
+    fn __eq__(&self, other: &PyModel) -> bool {
+        same_model(&self.inner, &other.inner)
+    }
+
+    fn __hash__(&self) -> isize {
+        identity(&self.inner, 0)
     }
 
     fn __repr__(&self) -> String {

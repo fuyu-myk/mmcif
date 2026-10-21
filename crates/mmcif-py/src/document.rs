@@ -5,7 +5,7 @@ use mmcif_cif::{BlockHandle, CategoryHandle, Document};
 use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 
-use crate::errors::read_error;
+use crate::errors::{cif_error, read_error};
 
 #[pyclass(name = "Document", module = "mmcif_io", frozen)]
 pub struct PyDocument {
@@ -29,9 +29,9 @@ impl PyDocument {
 
     #[staticmethod]
     fn open(py: Python<'_>, path: PathBuf) -> PyResult<PyDocument> {
-        py.detach(|| Document::open(path))
+        py.detach(|| Document::open(&path))
             .map(wrap)
-            .map_err(read_error)
+            .map_err(|error| cif_error(error, &path))
     }
 
     #[staticmethod]
@@ -43,9 +43,9 @@ impl PyDocument {
 
     #[staticmethod]
     fn open_bcif(py: Python<'_>, path: PathBuf) -> PyResult<PyDocument> {
-        py.detach(|| Document::open_bcif(path))
+        py.detach(|| Document::open_bcif(&path))
             .map(wrap)
-            .map_err(read_error)
+            .map_err(|error| cif_error(error, &path))
     }
 
     #[getter]

@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mmcif_ccd::{AtomStereo, BondStereo, CcdError, CcdIndex, Component, build_index_from_file};
+use mmcif_ccd::{AtomStereo, BondStereo, CcdIndex, Component, build_index_from_file};
 use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 
-use crate::errors::read_error;
+use crate::errors::{ccd_error, os_error, read_error};
 
 #[pyclass(name = "CcdIndex", module = "mmcif_io", frozen)]
 pub struct PyCcdIndex {
@@ -22,9 +22,9 @@ fn wrap(index: CcdIndex) -> PyCcdIndex {
 impl PyCcdIndex {
     #[staticmethod]
     fn open(py: Python<'_>, path: PathBuf) -> PyResult<PyCcdIndex> {
-        py.detach(|| CcdIndex::open(path))
+        py.detach(|| CcdIndex::open(&path))
             .map(wrap)
-            .map_err(read_error)
+            .map_err(|error| ccd_error(error, &path))
     }
 
     #[staticmethod]
@@ -38,13 +38,13 @@ impl PyCcdIndex {
         let bytes = py
             .detach(|| {
                 let mut bytes = Vec::new();
-                build_index_from_file(source, &release, &mut bytes)?;
-                if let Some(out) = out {
-                    std::fs::write(out, &bytes)?;
-                }
-                Ok::<_, CcdError>(bytes)
+                build_index_from_file(&source, &release, &mut bytes).map(|_| bytes)
             })
-            .map_err(read_error)?;
+            .map_err(|error| ccd_error(error, &source))?;
+        if let Some(out) = out {
+            py.detach(|| std::fs::write(&out, &bytes))
+                .map_err(|error| os_error(&error, &out))?;
+        }
         CcdIndex::from_bytes(bytes).map(wrap).map_err(read_error)
     }
 
