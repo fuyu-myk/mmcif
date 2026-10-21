@@ -26,7 +26,7 @@ fn indexes_every_component_of_the_full_dictionary() {
             .any(|bond| bond.order() == BondOrder::Double)
     );
     for id in index.ids().step_by(97) {
-        let component = index.get(&id).unwrap().unwrap();
+        let component = index.get(id).unwrap().unwrap();
         assert_eq!(component.id(), id);
     }
 }
