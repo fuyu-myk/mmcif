@@ -175,3 +175,81 @@ fn help_and_version_are_available() {
     assert_eq!(code, 0);
     assert!(out.starts_with("mmcif "));
 }
+
+#[test]
+fn lower_writes_the_backend_specification_to_stdout() {
+    let path = spec("lower", CLEAN);
+    let (code, out, err) = run(&["lower", path.to_str().unwrap(), "--to", "boltzgen"]);
+    assert_eq!(code, 0);
+    assert!(err.is_empty(), "{err}");
+    assert!(out.starts_with("entities:\n"), "{out}");
+    assert!(out.contains("path: target.cif"), "{out}");
+    assert!(out.contains("sequence: 10..14C6C3"), "{out}");
+    assert!(out.contains("atom1: [S, 11, SG]"), "{out}");
+}
+
+#[test]
+fn lower_refuses_what_a_backend_cannot_express() {
+    let path = spec("lower-refused", CLEAN);
+    let (code, out, err) = run(&["lower", path.to_str().unwrap(), "--to", "rfd3"]);
+    assert_eq!(code, 1);
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("error[unsupported-by-backend]"), "{err}");
+    assert!(
+        err.contains("rfd3 cannot express a bond constraint"),
+        "{err}"
+    );
+    assert!(
+        err.contains("rfd3 cannot express this specification"),
+        "{err}"
+    );
+}
+
+#[test]
+fn lower_emits_rfd3_json_for_a_specification_it_can_express() {
+    let path = spec(
+        "lower-rfd3",
+        "entities:\n  - file:\n      path: target.cif\n      include:\n        - chain:\n            id: A\n  - protein:\n      id: S\n      sequence: 50..80\n",
+    );
+    let (code, out, err) = run(&["lower", path.to_str().unwrap(), "--to", "rfd3"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        out,
+        concat!(
+            "{\n",
+            "  \"design\": {\n",
+            "    \"contig\": \"A1-3,/0,50-80\",\n",
+            "    \"input\": \"target.cif\"\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn lower_needs_a_backend_it_knows() {
+    let path = spec("lower-usage", CLEAN);
+    let one = path.to_str().unwrap();
+    assert_eq!(run(&["lower", one, "--to", "nonsense"]).0, 2);
+    assert_eq!(run(&["lower", one]).0, 2);
+    assert_eq!(run(&["lower", one, "--to"]).0, 2);
+    assert_eq!(run(&["lower"]).0, 2);
+    assert!(
+        run(&["lower", one, "--to", "nonsense"])
+            .2
+            .contains("expected boltzgen or rfd3")
+    );
+}
+
+#[test]
+fn lower_refuses_a_specification_that_does_not_check() {
+    let path = spec(
+        "lower-broken",
+        "entities:\n  - protein:\n      id: S\n      sequence: 0\n",
+    );
+    let (code, out, err) = run(&["lower", path.to_str().unwrap(), "--to", "boltzgen"]);
+    assert_eq!(code, 1);
+    assert!(out.is_empty());
+    assert!(err.contains("error[bad-sequence]"), "{err}");
+    assert!(err.contains("nothing was written"), "{err}");
+}

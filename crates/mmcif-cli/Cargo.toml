@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 mmcif-ir.workspace = true
+mmcif-lower.workspace = true
 mmcif-spec.workspace = true
 
 [lints]

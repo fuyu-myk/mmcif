@@ -1,17 +1,23 @@
 use std::process::ExitCode;
 
 use mmcif_ir::{Corner, Instantiated, SegmentId};
-use mmcif_spec::{Checked, check_path};
+use mmcif_lower::{Backend, lower};
+use mmcif_spec::{Checked, Report, check_path};
 
 const USAGE: &str = "usage: mmcif <command> <specification>
 
 commands:
-  check <spec.yaml>   report problems in a design specification
-  show <spec.yaml>    print what the specification resolves to
+  check <spec.yaml>              report problems in a design specification
+  show <spec.yaml>               print what the specification resolves to
+  lower <spec.yaml> --to <name>  write the specification for a backend
+
+backends:
+  boltzgen                       design specification yaml
+  rfd3                           RFdiffusion3 input json
 
 options:
-  -h, --help          print this message
-  -V, --version       print the version";
+  -h, --help                     print this message
+  -V, --version                  print the version";
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -33,6 +39,17 @@ fn main() -> ExitCode {
             )),
             Some(path) => run(command, path),
         },
+        Some("lower") => match arguments.get(1..) {
+            Some([path, flag, name]) if flag == "--to" => match Backend::named(name) {
+                Some(backend) => emit(path, backend),
+                None => usage(&format!(
+                    "unknown backend {name}, expected {}",
+                    Backend::names().join(" or ")
+                )),
+            },
+            Some([_]) | Some([_, _]) => usage("lower needs a specification and --to <backend>"),
+            _ => usage("lower takes one specification and --to <backend>"),
+        },
         Some(command) => usage(&format!("unknown command {command}")),
     }
 }
@@ -53,6 +70,40 @@ fn run(command: &str, path: &str) -> ExitCode {
     match command {
         "show" => show(&checked),
         _ => report(&checked),
+    }
+}
+
+fn emit(path: &str, backend: Backend) -> ExitCode {
+    let checked = match check_path(path) {
+        Ok(checked) => checked,
+        Err(error) => {
+            eprintln!("mmcif: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    let rendered = checked.render();
+    if !rendered.is_empty() {
+        eprint!("{rendered}");
+    }
+    let Some(design) = checked.design.as_ref().filter(|_| !checked.has_errors()) else {
+        eprintln!("mmcif: the specification has problems, nothing was written");
+        return ExitCode::FAILURE;
+    };
+    match lower(backend, checked.source, design) {
+        Ok(text) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Err(problems) => {
+            let mut report = Report::new();
+            report.extend(problems);
+            eprint!("{}", checked.sources.render_all(&report));
+            eprintln!(
+                "mmcif: {} cannot express this specification",
+                backend.name()
+            );
+            ExitCode::FAILURE
+        }
     }
 }
 

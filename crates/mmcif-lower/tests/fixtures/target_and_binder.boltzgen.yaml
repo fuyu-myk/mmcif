@@ -1,0 +1,22 @@
+entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+            res_index: 1..6
+      design:
+        - chain:
+            id: A
+            res_index: 4..5
+      secondary_structure:
+        - chain:
+            id: A
+            helix: 4..5
+  - protein:
+      id: S
+      sequence: 10..14C6C3
+constraints:
+  - bond:
+      atom1: [S, 11, SG]
+      atom2: [S, 18, SG]

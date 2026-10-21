@@ -9,6 +9,7 @@ use crate::span::SourceId;
 use crate::span::Span;
 
 pub struct Target {
+    pub declared: String,
     pub path: PathBuf,
     pub structure: Structure,
 }
@@ -22,6 +23,7 @@ pub fn load(
     let full = base.join(&path.value);
     match mmcif_model::read(&full) {
         Ok(structure) => Some(Target {
+            declared: path.value.clone(),
             path: full,
             structure,
         }),
@@ -207,6 +209,7 @@ ATOM 10 C CA ALA B 2 1 21.000 0.000 0.000 1 B
 
     fn target() -> Target {
         Target {
+            declared: "test.cif".to_string(),
             path: PathBuf::from("/tmp/test.cif"),
             structure: mmcif_model::parse_mmcif(CIF).expect("the fixture parses"),
         }

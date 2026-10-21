@@ -1,0 +1,7 @@
+{
+  "design": {
+    "contig": "A1-6,/0,10-14",
+    "input": "target.cif",
+    "select_unfixed_sequence": "A4-5"
+  }
+}

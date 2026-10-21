@@ -27,6 +27,13 @@ const ONE_LETTER: [(char, &str); 21] = [
     ('X', "UNK"),
 ];
 
+pub fn one_letter(component: &CompId) -> Option<char> {
+    ONE_LETTER
+        .iter()
+        .find(|(_, code)| *code == component.as_str())
+        .map(|(letter, _)| *letter)
+}
+
 pub fn component(letter: char) -> Option<CompId> {
     ONE_LETTER
         .iter()

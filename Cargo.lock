@@ -406,6 +406,7 @@ name = "mmcif-cli"
 version = "0.0.0"
 dependencies = [
  "mmcif-ir",
+ "mmcif-lower",
  "mmcif-spec",
 ]
 
@@ -433,6 +434,15 @@ dependencies = [
  "mmcif-model",
  "proptest",
  "thiserror",
+]
+
+[[package]]
+name = "mmcif-lower"
+version = "0.0.0"
+dependencies = [
+ "mmcif-ir",
+ "mmcif-model",
+ "mmcif-spec",
 ]
 
 [[package]]

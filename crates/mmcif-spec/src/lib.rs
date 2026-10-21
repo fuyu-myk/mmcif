@@ -1,4 +1,5 @@
 mod check;
+mod design;
 mod diagnostic;
 mod document;
 mod geometry;
@@ -12,9 +13,12 @@ mod yaml;
 
 use std::path::{Path, PathBuf};
 
-use mmcif_ir::{Instantiated, Spec};
+use mmcif_ir::Instantiated;
 
+pub use design::{Design, ElementSource, SegmentKind, SegmentSource, TargetPath};
 pub use diagnostic::{Diagnostic, Label, Report, Severity};
+pub use lower::Addressing;
+pub use sequence::{component, one_letter};
 pub use span::{Location, SourceFile, SourceId, Sources, Span};
 
 #[derive(Debug, thiserror::Error)]
@@ -31,7 +35,7 @@ pub struct Checked {
     pub sources: Sources,
     pub report: Report,
     pub source: SourceId,
-    pub spec: Option<Spec>,
+    pub design: Option<Design>,
     pub shortest: Option<Instantiated>,
 }
 
@@ -67,7 +71,7 @@ pub fn check_text(name: impl Into<String>, text: &str, base: &Path) -> Checked {
                 sources,
                 report,
                 source,
-                spec: None,
+                design: None,
                 shortest: None,
             };
         }
@@ -79,7 +83,7 @@ pub fn check_text(name: impl Into<String>, text: &str, base: &Path) -> Checked {
         sources,
         report,
         source,
-        spec: Some(lowered.spec),
+        design: Some(lowered.design()),
         shortest,
     }
 }

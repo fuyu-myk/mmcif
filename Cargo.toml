@@ -16,6 +16,7 @@ mmcif-ccd = { path = "crates/mmcif-ccd", version = "0.1.0" }
 mmcif-geom = { path = "crates/mmcif-geom", version = "0.1.0" }
 mmcif-ir = { path = "crates/mmcif-ir" }
 mmcif-spec = { path = "crates/mmcif-spec" }
+mmcif-lower = { path = "crates/mmcif-lower" }
 saphyr-parser = "0.2.2"
 memchr = "2.8"
 memmap2 = "0.9"

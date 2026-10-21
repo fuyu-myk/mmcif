@@ -6,6 +6,7 @@ use mmcif_ir::{
 };
 use mmcif_model::AtomName;
 
+use crate::design::SegmentKind;
 use crate::diagnostic::{Diagnostic, Report};
 use crate::document::{
     AtomRef, Document, Entity, EntityKind, FileEntity, Protein, Ranges, Selection, Spanned,
@@ -31,6 +32,7 @@ pub struct ElementInfo {
 #[derive(Debug, Clone)]
 pub struct SegmentInfo {
     pub id: SegmentId,
+    pub kind: SegmentKind,
     pub span: Span,
     pub addressing: Addressing,
     pub elements: Vec<ElementInfo>,
@@ -108,7 +110,7 @@ pub fn lower(source: SourceId, base: &Path, document: &Document, report: &mut Re
                     &mut lowered,
                     &ligand.id,
                     entity.span,
-                    Addressing::Positional,
+                    SegmentKind::Ligand,
                     vec![(
                         Element::Slot(slot),
                         ElementInfo {
@@ -169,7 +171,7 @@ fn designed(
         lowered,
         &protein.id,
         entity.span,
-        Addressing::Positional,
+        SegmentKind::Protein,
         elements,
         report,
     );
@@ -253,7 +255,7 @@ fn from_file(
             lowered,
             &selection.chain,
             selection.span,
-            Addressing::Label,
+            SegmentKind::File,
             elements,
             report,
         );
@@ -409,7 +411,7 @@ fn push(
     lowered: &mut Lowered,
     id: &Spanned<String>,
     span: Span,
-    addressing: Addressing,
+    kind: SegmentKind,
     elements: Vec<(Element, ElementInfo)>,
     report: &mut Report,
 ) {
@@ -435,8 +437,9 @@ fn push(
     {
         Ok(_) => lowered.segments.push(SegmentInfo {
             id: segment,
+            kind,
             span,
-            addressing,
+            addressing: kind.addressing(),
             elements: infos,
         }),
         Err(error) => report.push(ir_error(source, id.span, error)),
