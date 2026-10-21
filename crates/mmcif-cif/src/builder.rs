@@ -39,6 +39,10 @@ impl DocumentBuilder {
         DocumentBuilder::default()
     }
 
+    pub(crate) fn text_len(&self) -> usize {
+        self.text.len()
+    }
+
     fn store(&mut self, text: &str) -> Result<(usize, usize), BuildError> {
         let start = self.text.len();
         self.text.push_str(text);

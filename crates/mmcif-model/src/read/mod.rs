@@ -57,6 +57,14 @@ pub fn read_mmcif(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
     Structure::from_document(&Document::open(path)?)
 }
 
+pub fn parse_bcif(bytes: &[u8]) -> Result<Structure, ReadError> {
+    Structure::from_document(&Document::from_bcif(bytes).map_err(mmcif_cif::Error::from)?)
+}
+
+pub fn read_bcif(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
+    Structure::from_document(&Document::open_bcif(path)?)
+}
+
 pub fn read(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
     let path = path.as_ref();
     let extension = path
@@ -65,6 +73,7 @@ pub fn read(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
         .map(str::to_ascii_lowercase);
     match extension.as_deref() {
         Some("cif" | "mmcif") => read_mmcif(path),
+        Some("bcif") => read_bcif(path),
         Some("pdb" | "ent") => pdb::read_pdb(path),
         _ => Err(ReadError::UnknownFormat(path.display().to_string())),
     }

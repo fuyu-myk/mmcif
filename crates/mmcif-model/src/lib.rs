@@ -28,5 +28,5 @@ pub use ids::{
 pub use key::{AuthResidueKey, LabelResidueKey, ResidueKey};
 pub use numbering::{Numbering, NumberingError};
 pub use pdb::{parse_pdb, read_pdb};
-pub use read::{parse_mmcif, read, read_mmcif};
+pub use read::{parse_bcif, parse_mmcif, read, read_bcif, read_mmcif};
 pub use structure::{Atom, Chain, Model, Residue, Structure};

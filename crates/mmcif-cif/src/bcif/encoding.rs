@@ -251,7 +251,10 @@ mod tests {
 
     #[test]
     fn enforces_the_element_limit() {
-        let limits = BcifLimits { max_elements: 5 };
+        let limits = BcifLimits {
+            max_elements: 5,
+            ..BcifLimits::default()
+        };
         assert_eq!(
             decode_texts_with(&i32_bytes(&[0; 6]), vec![byte_array(INT32)], limits),
             Err(BcifError::LimitExceeded { limit: 5 })

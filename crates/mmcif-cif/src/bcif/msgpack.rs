@@ -266,7 +266,10 @@ mod tests {
     #[test]
     fn counts_container_elements_against_the_limit() {
         let bytes = Pack::Array(vec![Pack::Nil; 10]).encode();
-        let mut budget = Budget::new(BcifLimits { max_elements: 9 });
+        let mut budget = Budget::new(BcifLimits {
+            max_elements: 9,
+            ..BcifLimits::default()
+        });
         assert_eq!(
             parse(&bytes, &mut budget),
             Err(BcifError::LimitExceeded { limit: 9 })

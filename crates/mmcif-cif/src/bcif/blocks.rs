@@ -20,6 +20,7 @@ pub(crate) fn decode_document(bytes: &[u8], limits: BcifLimits) -> Result<Docume
                 &mut builder,
                 Record::new(category, "categories")?,
                 &mut budget,
+                limits.max_text_bytes,
             )?;
         }
     }
@@ -117,10 +118,18 @@ fn decode_mask(
     values.into_iter().map(Presence::from_mask).collect()
 }
 
+fn check_text(builder: &DocumentBuilder, limit: usize) -> Result<(), BcifError> {
+    if builder.text_len() > limit {
+        return Err(BcifError::TextLimitExceeded { limit });
+    }
+    Ok(())
+}
+
 fn add_category(
     builder: &mut DocumentBuilder,
     category: Record<'_>,
     budget: &mut Budget,
+    max_text_bytes: usize,
 ) -> Result<(), BcifError> {
     let name = category.str("name")?;
     let name = name.strip_prefix('_').unwrap_or(name);
@@ -137,6 +146,7 @@ fn add_category(
     if rows == 1 {
         for column in &columns {
             builder.pair(&column.tag, column.value(0, &mut buffer)?)?;
+            check_text(builder, max_text_bytes)?;
         }
         return Ok(());
     }
@@ -145,6 +155,7 @@ fn add_category(
         for column in &columns {
             builder.push(column.value(row, &mut buffer)?)?;
         }
+        check_text(builder, max_text_bytes)?;
     }
     Ok(())
 }
@@ -338,7 +349,10 @@ mod tests {
 
     #[test]
     fn honours_custom_limits_and_reports_io_errors() {
-        let limits = BcifLimits { max_elements: 10 };
+        let limits = BcifLimits {
+            max_elements: 10,
+            ..BcifLimits::default()
+        };
         assert_eq!(
             Document::from_bcif_with_limits(&sample(), limits).unwrap_err(),
             BcifError::LimitExceeded { limit: 10 }
@@ -347,5 +361,17 @@ mod tests {
             Document::open_bcif("/nonexistent/file.bcif"),
             Err(Error::Io(_))
         ));
+    }
+
+    #[test]
+    fn bounds_decoded_text() {
+        let limits = BcifLimits {
+            max_text_bytes: 8,
+            ..BcifLimits::default()
+        };
+        assert_eq!(
+            Document::from_bcif_with_limits(&sample(), limits).unwrap_err(),
+            BcifError::TextLimitExceeded { limit: 8 }
+        );
     }
 }

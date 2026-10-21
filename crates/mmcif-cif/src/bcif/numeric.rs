@@ -257,7 +257,10 @@ mod tests {
 
     #[test]
     fn checks_run_length_size_against_the_limit_before_allocating() {
-        let mut small = Budget::new(BcifLimits { max_elements: 1000 });
+        let mut small = Budget::new(BcifLimits {
+            max_elements: 1000,
+            ..BcifLimits::default()
+        });
         assert_eq!(
             run_length(vec![1, 1 << 40], 1 << 40, &mut small),
             Err(BcifError::LimitExceeded { limit: 1000 })

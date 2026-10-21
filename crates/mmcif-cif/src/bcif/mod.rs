@@ -22,12 +22,14 @@ pub use error::BcifError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BcifLimits {
     pub max_elements: usize,
+    pub max_text_bytes: usize,
 }
 
 impl Default for BcifLimits {
     fn default() -> Self {
         BcifLimits {
             max_elements: 1 << 28,
+            max_text_bytes: 1 << 31,
         }
     }
 }

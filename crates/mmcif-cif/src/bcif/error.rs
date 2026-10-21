@@ -41,6 +41,8 @@ pub enum BcifError {
     },
     #[error("decoding needs more than {limit} array elements")]
     LimitExceeded { limit: usize },
+    #[error("decoded text exceeds the limit of {limit} bytes")]
+    TextLimitExceeded { limit: usize },
     #[error("integer overflow while decoding {0}")]
     Overflow(&'static str),
     #[error("RunLength data has an odd number of elements ({0})")]
