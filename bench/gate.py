@@ -53,6 +53,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         metavar="PERCENT",
         help="largest allowed peak heap growth (default %(default)s)",
     )
+    parser.add_argument("--regressions-out", type=Path, help="write the regressed names as JSON")
     parser.add_argument("--base-memory", type=Path, help="mmcif-mem report of the base commit")
     parser.add_argument("--head-memory", type=Path, help="mmcif-mem report of the head commit")
     return parser.parse_args(argv)
@@ -241,6 +242,12 @@ def main(argv: list[str] | None = None) -> int:
         report_missing_files([args.base_memory, args.head_memory])
         memory = memory_rows(args.base_memory, args.head_memory, args.memory_threshold / 100)
         print_table("peak heap", memory)
+    if args.regressions_out is not None:
+        regressed = {
+            "time": [row.name for row in time if row.status == REGRESSED],
+            "memory": [row.name for row in memory if row.status == REGRESSED],
+        }
+        args.regressions_out.write_text(json.dumps(regressed))
     return verdict(time, memory, args)
 
 
