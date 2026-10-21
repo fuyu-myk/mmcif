@@ -42,7 +42,8 @@ impl Layout {
 
 fn validate_directory(directory: &[u8]) -> Result<(), CcdError> {
     let mut previous: Option<&[u8]> = None;
-    for entry in directory.chunks_exact(DIRECTORY_ENTRY_LEN) {
+    let (entries, _) = directory.as_chunks::<DIRECTORY_ENTRY_LEN>();
+    for entry in entries {
         let key = &entry[..MAX_ID_LEN];
         if key_id(key).is_none() {
             return Err(corrupt("invalid id in directory"));

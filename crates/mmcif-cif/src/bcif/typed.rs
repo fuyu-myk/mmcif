@@ -39,14 +39,8 @@ impl DataType {
 }
 
 fn read_le<const N: usize, T>(bytes: &[u8], convert: impl Fn([u8; N]) -> T) -> Vec<T> {
-    bytes
-        .chunks_exact(N)
-        .map(|chunk| {
-            let mut array = [0; N];
-            array.copy_from_slice(chunk);
-            convert(array)
-        })
-        .collect()
+    let (chunks, _) = bytes.as_chunks::<N>();
+    chunks.iter().map(|&chunk| convert(chunk)).collect()
 }
 
 pub(crate) fn byte_array<'v>(

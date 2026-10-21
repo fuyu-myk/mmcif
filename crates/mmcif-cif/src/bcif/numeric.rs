@@ -94,10 +94,11 @@ pub(crate) fn run_length<'v>(
     if !pairs.len().is_multiple_of(2) {
         return Err(BcifError::OddRunLength(pairs.len()));
     }
+    let (runs, _) = pairs.as_chunks::<2>();
     let mut total: usize = 0;
-    for pair in pairs.chunks_exact(2) {
+    for &[_, count] in runs {
         total = total
-            .checked_add(run_count(pair[1])?)
+            .checked_add(run_count(count)?)
             .ok_or(BcifError::Overflow("RunLength"))?;
     }
     if total != size {
@@ -109,8 +110,8 @@ pub(crate) fn run_length<'v>(
     }
     budget.take(size)?;
     let mut output = Vec::with_capacity(size);
-    for pair in pairs.chunks_exact(2) {
-        output.extend(std::iter::repeat_n(pair[0], run_count(pair[1])?));
+    for &[value, count] in runs {
+        output.extend(std::iter::repeat_n(value, run_count(count)?));
     }
     Ok(Array::Ints(output))
 }
