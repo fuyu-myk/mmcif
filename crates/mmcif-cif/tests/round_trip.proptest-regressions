@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b65e4f61e5815a2844f87ecc125cdf7c99d8d2a79fca4326b6400e071951632d # shrinks to blocks = [("0", [Loop(["_a.0"], []), Pair("_a.]", ("", None))])]

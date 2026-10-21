@@ -1,0 +1,18 @@
+[package]
+name = "mmcif-cif"
+description = "Lossless CIF/mmCIF tokenizer, table layer and BinaryCIF decoder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+memchr.workspace = true
+memmap2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
