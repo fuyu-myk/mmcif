@@ -24,13 +24,20 @@ pub(crate) struct Tokenizer<'a> {
     pos: usize,
 }
 
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
 fn is_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
 }
 
 impl<'a> Tokenizer<'a> {
     pub fn new(src: &'a [u8]) -> Self {
-        Tokenizer { src, pos: 0 }
+        let pos = if src.starts_with(UTF8_BOM) {
+            UTF8_BOM.len()
+        } else {
+            0
+        };
+        Tokenizer { src, pos }
     }
 
     fn error(&self, offset: usize, kind: ParseErrorKind) -> ParseError {
@@ -219,6 +226,11 @@ mod tests {
             tokens("x ;y"),
             vec![(Value(Bare), "x"), (Value(Bare), ";y")]
         );
+    }
+
+    #[test]
+    fn skips_a_leading_byte_order_mark() {
+        assert_eq!(tokens("\u{FEFF}data_x"), vec![(Data, "x")]);
     }
 
     #[test]
