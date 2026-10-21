@@ -91,7 +91,7 @@ pub(crate) fn run_length<'v>(
     size: usize,
     budget: &mut Budget,
 ) -> Result<Array<'v>, BcifError> {
-    if pairs.len() % 2 != 0 {
+    if !pairs.len().is_multiple_of(2) {
         return Err(BcifError::OddRunLength(pairs.len()));
     }
     let mut total: usize = 0;
