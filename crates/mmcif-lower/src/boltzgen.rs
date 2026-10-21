@@ -45,15 +45,7 @@ pub fn emit(source: SourceId, design: &Design) -> Result<String, Vec<Diagnostic>
                     group.push(next);
                     position += 1;
                 }
-                file(
-                    &mut out,
-                    source,
-                    design,
-                    target,
-                    &group,
-                    &structures,
-                    &mut problems,
-                );
+                file(&mut out, source, design, &group, &structures, &mut problems);
             }
             SegmentKind::Protein => {
                 protein(&mut out, source, design, segment, &mut problems);
@@ -132,13 +124,11 @@ fn file(
     out: &mut String,
     source: SourceId,
     design: &Design,
-    target: Option<usize>,
     group: &[&SegmentSource],
     structures: &Structures,
     problems: &mut Vec<Diagnostic>,
 ) {
-    let path = target.and_then(|index| design.targets.get(index));
-    let Some(path) = path else {
+    let Some(path) = group.first().and_then(|segment| design.target_of(segment)) else {
         problems.push(refusal(
             source,
             group
