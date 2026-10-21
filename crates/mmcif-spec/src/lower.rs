@@ -2,8 +2,7 @@ use std::path::Path;
 
 use mmcif_ir::{
     AtomAddress, Constraint, Element, ElementIndex, Geometry, GroupId, Identity, IrError, Length,
-    ResidueRef, Scope, Segment, SegmentId, Slot, Spec, Symbolic,
-    SymbolicAddress,
+    ResidueRef, Scope, Segment, SegmentId, Slot, Spec, Symbolic, SymbolicAddress,
 };
 use mmcif_model::AtomName;
 
@@ -96,18 +95,24 @@ pub fn lower(source: SourceId, base: &Path, document: &Document, report: &mut Re
                 designed(source, &mut lowered, entity, protein, report);
             }
             EntityKind::Ligand(ligand) => {
-                let slot = Slot::new(Identity::Exactly(ligand.ccd.value.as_str().into()), Geometry::Free);
+                let slot = Slot::new(
+                    Identity::Exactly(ligand.ccd.value.as_str().into()),
+                    Geometry::Free,
+                );
                 push(
                     source,
                     &mut lowered,
                     &ligand.id,
                     entity.span,
                     Addressing::Positional,
-                    vec![(Element::Slot(slot), ElementInfo {
-                        span: ligand.ccd.span,
-                        label: None,
-                        target: None,
-                    })],
+                    vec![(
+                        Element::Slot(slot),
+                        ElementInfo {
+                            span: ligand.ccd.span,
+                            label: None,
+                            target: None,
+                        },
+                    )],
                     report,
                 );
             }
@@ -142,10 +147,9 @@ fn designed(
             target: None,
         };
         let element = match &piece.token {
-            Token::Residue(comp) => Element::Slot(Slot::new(
-                Identity::Exactly(comp.clone()),
-                Geometry::Free,
-            )),
+            Token::Residue(comp) => {
+                Element::Slot(Slot::new(Identity::Exactly(comp.clone()), Geometry::Free))
+            }
             Token::Designed { min, max } => match Length::range(*min, *max) {
                 Ok(length) => Element::run(Slot::de_novo(), length),
                 Err(error) => {
@@ -210,12 +214,13 @@ fn from_file(
         let elements: Vec<(Element, ElementInfo)> = residues
             .iter()
             .map(|residue| {
-                let anchored = !designed.iter().any(|ranges| ranges.contains(residue.seq.get()));
+                let anchored = !designed
+                    .iter()
+                    .any(|ranges| ranges.contains(residue.seq.get()));
                 let slot = match anchored {
-                    true => Slot::context(
-                        residue.comp.clone(),
-                        ResidueRef::Label(residue.key.clone()),
-                    ),
+                    true => {
+                        Slot::context(residue.comp.clone(), ResidueRef::Label(residue.key.clone()))
+                    }
                     false => Slot::de_novo(),
                 };
                 (
@@ -390,9 +395,12 @@ fn push(
     }
     if let Some(known) = lowered.segment(&id.value) {
         report.push(
-            Diagnostic::error("duplicate-chain", format!("chain {} is declared twice", id.value))
-                .at(source, known.span, "first declared here")
-                .at(source, id.span, "declared again here"),
+            Diagnostic::error(
+                "duplicate-chain",
+                format!("chain {} is declared twice", id.value),
+            )
+            .at(source, known.span, "first declared here")
+            .at(source, id.span, "declared again here"),
         );
         return;
     }
@@ -450,9 +458,7 @@ fn address(
         return None;
     };
     match segment.locate(atom.index.value, &lowered.spec) {
-        Some((element, offset)) => {
-            Some(SymbolicAddress::at(segment.id.clone(), element, offset))
-        }
+        Some((element, offset)) => Some(SymbolicAddress::at(segment.id.clone(), element, offset)),
         None => {
             let help = match segment.addressing {
                 Addressing::Positional => format!(
@@ -467,10 +473,9 @@ fn address(
                         .filter_map(|element| element.label)
                         .collect();
                     match (labels.first(), labels.last()) {
-                        (Some(first), Some(last)) => format!(
-                            "chain {} covers residues {first} to {last}",
-                            segment.id
-                        ),
+                        (Some(first), Some(last)) => {
+                            format!("chain {} covers residues {first} to {last}", segment.id)
+                        }
                         _ => format!("chain {} holds no residues", segment.id),
                     }
                 }

@@ -217,28 +217,31 @@ fn place(
             items.push(node);
             Ok(())
         }
-        Some(Frame::Mapping(frame)) => match frame.pending.take() {
-            None => {
-                if node.as_str().is_none() {
-                    return Err(Diagnostic::error("yaml-complex-key", "keys must be names")
-                        .at(source, node.span, format!("this key is {}", node.kind())));
+        Some(Frame::Mapping(frame)) => {
+            match frame.pending.take() {
+                None => {
+                    if node.as_str().is_none() {
+                        return Err(Diagnostic::error("yaml-complex-key", "keys must be names")
+                            .at(source, node.span, format!("this key is {}", node.kind())));
+                    }
+                    if let Some(first) = duplicate(&frame.entries, &node) {
+                        let name = node.as_str().unwrap_or_default().to_string();
+                        return Err(Diagnostic::error(
+                            "duplicate-key",
+                            format!("`{name}` is set twice"),
+                        )
+                        .at(source, first, "first set here")
+                        .at(source, node.span, "set again here"));
+                    }
+                    frame.pending = Some(node);
+                    Ok(())
                 }
-                if let Some(first) = duplicate(&frame.entries, &node) {
-                    let name = node.as_str().unwrap_or_default().to_string();
-                    return Err(
-                        Diagnostic::error("duplicate-key", format!("`{name}` is set twice"))
-                            .at(source, first, "first set here")
-                            .at(source, node.span, "set again here"),
-                    );
+                Some(key) => {
+                    frame.entries.push((key, node));
+                    Ok(())
                 }
-                frame.pending = Some(node);
-                Ok(())
             }
-            Some(key) => {
-                frame.entries.push((key, node));
-                Ok(())
-            }
-        },
+        }
     }
 }
 
@@ -270,10 +273,7 @@ mod tests {
         assert_eq!(kind.as_str(), Some("protein"));
         let sequence = body.as_mapping().unwrap().get("sequence").unwrap();
         assert_eq!(sequence.as_str(), Some("80..140"));
-        assert_eq!(
-            &text[sequence.span.start()..sequence.span.end()],
-            "80..140"
-        );
+        assert_eq!(&text[sequence.span.start()..sequence.span.end()], "80..140");
         let id = body.as_mapping().unwrap().entry("id").unwrap().0.span;
         assert_eq!(&text[id.start()..id.end()], "id");
     }
@@ -289,7 +289,13 @@ mod tests {
     #[test]
     fn flow_collections_parse_like_block_ones() {
         let document = load("constraints:\n  - bond:\n      atom1: [R, 4, SG]\n").unwrap();
-        let bond = &document.as_mapping().unwrap().get("constraints").unwrap().as_sequence().unwrap()[0];
+        let bond = &document
+            .as_mapping()
+            .unwrap()
+            .get("constraints")
+            .unwrap()
+            .as_sequence()
+            .unwrap()[0];
         let atom = bond
             .as_mapping()
             .unwrap()

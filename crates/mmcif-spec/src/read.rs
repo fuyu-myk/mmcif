@@ -130,9 +130,11 @@ impl Reader<'_> {
                 );
                 continue;
             }
-            let mut diagnostic =
-                Diagnostic::error("unknown-key", format!("`{name}` is not a known key"))
-                    .at(self.source, key.span, "not part of the schema");
+            let mut diagnostic = Diagnostic::error(
+                "unknown-key",
+                format!("`{name}` is not a known key"),
+            )
+            .at(self.source, key.span, "not part of the schema");
             if let Some(closest) = closest(name, known) {
                 diagnostic = diagnostic.help(format!("did you mean `{closest}`?"));
             }
@@ -162,16 +164,21 @@ impl Reader<'_> {
         let name = kind.value.as_str();
         if ENTITY_UNSUPPORTED.contains(&name) {
             self.report.push(
-                Diagnostic::warning("unsupported-entity", format!("`{name}` entities are skipped"))
-                    .at(self.source, kind.span, "not represented yet")
-                    .help("protein, ligand and file entities are checked"),
+                Diagnostic::warning(
+                    "unsupported-entity",
+                    format!("`{name}` entities are skipped"),
+                )
+                .at(self.source, kind.span, "not represented yet")
+                .help("protein, ligand and file entities are checked"),
             );
             return None;
         }
         if !ENTITY_KINDS.contains(&name) {
-            let mut diagnostic =
-                Diagnostic::error("unknown-entity", format!("`{name}` is not an entity kind"))
-                    .at(self.source, kind.span, "not part of the schema");
+            let mut diagnostic = Diagnostic::error(
+                "unknown-entity",
+                format!("`{name}` is not an entity kind"),
+            )
+            .at(self.source, kind.span, "not part of the schema");
             if let Some(closest) = closest(name, &ENTITY_KINDS) {
                 diagnostic = diagnostic.help(format!("did you mean `{closest}`?"));
             }
@@ -252,9 +259,7 @@ impl Reader<'_> {
             else {
                 continue;
             };
-            let residues = mapping
-                .get("res_index")
-                .and_then(|node| self.ranges(node));
+            let residues = mapping.get("res_index").and_then(|node| self.ranges(node));
             selections.push(Selection {
                 span: item.span,
                 chain: id,
@@ -470,7 +475,8 @@ mod tests {
 
     #[test]
     fn a_protein_entity_carries_its_sequence() {
-        let (document, report) = read("entities:\n  - protein:\n      id: B\n      sequence: 80..140\n");
+        let (document, report) =
+            read("entities:\n  - protein:\n      id: B\n      sequence: 80..140\n");
         assert!(report.is_empty(), "{:?}", report.codes());
         let EntityKind::Protein(protein) = &document.entities[0].kind else {
             panic!("expected a protein");
@@ -599,11 +605,30 @@ mod tests {
             let (_, report) = read(text);
             report.codes().first().copied().unwrap_or("none")
         };
-        let spec = "entities:\n  - protein:\n      id: S\n      sequence: 17\nconstraints:\n  - bond:\n";
-        assert_eq!(bad(&format!("{spec}      atom1: [S, 11]\n      atom2: [S, 12, SG]\n")), "wrong-shape");
-        assert_eq!(bad(&format!("{spec}      atom1: [S, x, SG]\n      atom2: [S, 12, SG]\n")), "bad-residue-index");
-        assert_eq!(bad(&format!("{spec}      atom1: [S, 0, SG]\n      atom2: [S, 12, SG]\n")), "bad-residue-index");
-        assert_eq!(bad(&format!("{spec}      atom2: [S, 12, SG]\n")), "missing-key");
+        let spec =
+            "entities:\n  - protein:\n      id: S\n      sequence: 17\nconstraints:\n  - bond:\n";
+        assert_eq!(
+            bad(&format!(
+                "{spec}      atom1: [S, 11]\n      atom2: [S, 12, SG]\n"
+            )),
+            "wrong-shape"
+        );
+        assert_eq!(
+            bad(&format!(
+                "{spec}      atom1: [S, x, SG]\n      atom2: [S, 12, SG]\n"
+            )),
+            "bad-residue-index"
+        );
+        assert_eq!(
+            bad(&format!(
+                "{spec}      atom1: [S, 0, SG]\n      atom2: [S, 12, SG]\n"
+            )),
+            "bad-residue-index"
+        );
+        assert_eq!(
+            bad(&format!("{spec}      atom2: [S, 12, SG]\n")),
+            "missing-key"
+        );
     }
 
     #[test]
@@ -618,7 +643,10 @@ mod tests {
             "entities:\n  - file:\n      path: a.cif\n      include:\n",
             "        - chain:\n            id: A\n            res_index: 0..4\n",
         ));
-        assert_eq!(report.diagnostics()[0].labels[0].message, "residue indices start at 1");
+        assert_eq!(
+            report.diagnostics()[0].labels[0].message,
+            "residue indices start at 1"
+        );
     }
 
     #[test]

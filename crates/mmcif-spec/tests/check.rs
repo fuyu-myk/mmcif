@@ -37,11 +37,7 @@ fn a_clean_specification_lowers_without_complaint() {
         ),
         target_entity()
     ));
-    assert!(
-        checked.report.is_empty(),
-        "{}",
-        checked.render()
-    );
+    assert!(checked.report.is_empty(), "{}", checked.render());
     let shortest = checked.shortest.expect("the spec instantiates");
     assert_eq!(
         shortest.segment_ids(),
@@ -170,10 +166,7 @@ fn a_bond_on_a_missing_atom_lists_the_atoms_in_the_file() {
         .find(|entry| entry.code == "unknown-atom")
         .unwrap();
     assert_eq!(diagnostic.message, "GLY has no atom SG");
-    assert_eq!(
-        diagnostic.help.as_deref(),
-        Some("atoms in the file: N, CA")
-    );
+    assert_eq!(diagnostic.help.as_deref(), Some("atoms in the file: N, CA"));
 }
 
 #[test]

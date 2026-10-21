@@ -402,6 +402,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcif-cli"
+version = "0.0.0"
+dependencies = [
+ "mmcif-ir",
+ "mmcif-spec",
+]
+
+[[package]]
 name = "mmcif-dump"
 version = "0.0.0"
 dependencies = [

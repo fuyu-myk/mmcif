@@ -233,7 +233,10 @@ mod tests {
     fn a_descending_range_says_which_way_round_to_write_it() {
         let error = parse(source(), Span::new(0, 6), "20..15").unwrap_err();
         assert_eq!(error.labels[0].message, "the range counts down");
-        assert_eq!(error.help.as_deref(), Some("write the shorter length first"));
+        assert_eq!(
+            error.help.as_deref(),
+            Some("write the shorter length first")
+        );
     }
 
     #[test]

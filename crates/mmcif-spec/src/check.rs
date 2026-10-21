@@ -47,9 +47,7 @@ fn unsatisfiable(source: SourceId, lowered: &Lowered, error: IrError) -> Diagnos
             .segment(segment.as_str())
             .and_then(|info| info.elements.get(element.as_usize()))
             .map(|element| element.span),
-        IrError::UnknownSegment(segment) => lowered
-            .segment(segment.as_str())
-            .map(|info| info.span),
+        IrError::UnknownSegment(segment) => lowered.segment(segment.as_str()).map(|info| info.span),
         _ => None,
     };
     let span = span
@@ -123,12 +121,7 @@ fn target<'a>(
     lowered.targets.get(index)
 }
 
-fn atoms(
-    source: SourceId,
-    lowered: &Lowered,
-    instantiated: &Instantiated,
-    report: &mut Report,
-) {
+fn atoms(source: SourceId, lowered: &Lowered, instantiated: &Instantiated, report: &mut Report) {
     for (index, ends) in endpoints(lowered, instantiated).iter().enumerate() {
         for end in ends {
             let Some(key) = &end.anchor else { continue };
@@ -202,7 +195,9 @@ fn feasibility(
         for second in first + 1..count {
             if let (Some(left), Some(right)) = (known[first], known[second]) {
                 let measured = distance(left, right);
-                tighten(&mut upper, &mut lower, count, first, second, measured, measured);
+                tighten(
+                    &mut upper, &mut lower, count, first, second, measured, measured,
+                );
             } else if let Some(limit) = reach(instantiated, nodes[first].0, nodes[second].0) {
                 tighten(&mut upper, &mut lower, count, first, second, 0.0, limit);
             }

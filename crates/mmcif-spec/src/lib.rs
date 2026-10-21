@@ -18,7 +18,10 @@ pub use span::{Location, SourceFile, SourceId, Sources, Span};
 #[derive(Debug, thiserror::Error)]
 pub enum SpecError {
     #[error("{path} could not be read: {cause}")]
-    Unreadable { path: PathBuf, cause: std::io::Error },
+    Unreadable {
+        path: PathBuf,
+        cause: std::io::Error,
+    },
 }
 
 #[derive(Debug)]

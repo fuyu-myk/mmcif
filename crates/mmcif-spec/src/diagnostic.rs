@@ -230,9 +230,11 @@ mod tests {
     #[test]
     fn a_caret_covers_the_whole_span_on_one_line() {
         let (sources, id) = sources();
-        let rendered = sources.render(
-            &Diagnostic::warning("length", "wide range").at(id, Span::new(51, 58), "80 to 140"),
-        );
+        let rendered = sources.render(&Diagnostic::warning("length", "wide range").at(
+            id,
+            Span::new(51, 58),
+            "80 to 140",
+        ));
         assert!(rendered.starts_with("warning[length]: wide range\n"));
         assert!(rendered.contains("4 |       sequence: 80..140\n"));
         assert!(rendered.contains("  |                 ^^^^^^^ 80 to 140\n"));
@@ -241,8 +243,11 @@ mod tests {
     #[test]
     fn a_span_crossing_lines_stops_at_the_first_line() {
         let (sources, id) = sources();
-        let rendered = sources
-            .render(&Diagnostic::error("entity", "bad entity").at(id, Span::new(14, 40), "here"));
+        let rendered = sources.render(&Diagnostic::error("entity", "bad entity").at(
+            id,
+            Span::new(14, 40),
+            "here",
+        ));
         let carets = rendered
             .lines()
             .find(|line| line.contains('^'))
@@ -256,8 +261,11 @@ mod tests {
         let mut other = Sources::new();
         other.add("design.yaml", "");
         let unknown = other.add("other.cif", "");
-        let rendered = sources
-            .render(&Diagnostic::error("io", "unreadable").at(unknown, Span::new(0, 1), "no file"));
+        let rendered = sources.render(&Diagnostic::error("io", "unreadable").at(
+            unknown,
+            Span::new(0, 1),
+            "no file",
+        ));
         assert_eq!(rendered, "error[io]: unreadable\n  = no file\n");
     }
 
