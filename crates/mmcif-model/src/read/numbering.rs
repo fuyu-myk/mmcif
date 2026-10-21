@@ -7,7 +7,11 @@ use crate::numbering::Numbering;
 use crate::read::table::Table;
 use crate::structure::Model;
 
-pub(crate) fn read_numbering(block: &Block<'_>, models: &[Model]) -> Result<Numbering, ReadError> {
+pub(crate) fn read_numbering(
+    block: &Block<'_>,
+    models: &[Model],
+    has_author_numbering: bool,
+) -> Result<Numbering, ReadError> {
     let mut numbering = Numbering::default();
     if let Some(table) = Table::optional(block, "pdbx_poly_seq_scheme") {
         let asyms = table.required_column("asym_id")?;
@@ -52,6 +56,10 @@ pub(crate) fn read_numbering(block: &Block<'_>, models: &[Model]) -> Result<Numb
     }
     if let Some(model) = models.first() {
         for chain in &model.chains {
+            if !has_author_numbering {
+                numbering.insert_label_only(chain.label_asym.clone());
+                continue;
+            }
             for residue in &chain.residues {
                 let auth = chain.auth_key(residue);
                 match residue.label_seq {

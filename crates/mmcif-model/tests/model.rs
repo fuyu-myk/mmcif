@@ -363,3 +363,43 @@ fn highest_occupancy_compares_mean_occupancy_per_altloc() {
         .collect();
     assert_eq!(comps, ["GLY"]);
 }
+
+#[test]
+fn files_without_author_columns_do_not_invent_author_numbering() {
+    let text = "data_x\nloop_\n_atom_site.label_asym_id\n_atom_site.label_comp_id\n_atom_site.label_atom_id\n\
+                _atom_site.type_symbol\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n\
+                _atom_site.Cartn_z\nA GLY N N 1 0 0 0\n";
+    let structure = parse_mmcif(text).unwrap();
+    let chain = &structure.first_model().unwrap().chains()[0];
+    assert_eq!(chain.auth_asym().as_str(), "A");
+    assert_eq!(
+        structure.numbering().to_auth(&LabelResidueKey {
+            asym: "A".into(),
+            seq: LabelSeqId::new(1).unwrap()
+        }),
+        Err(NumberingError::NoAuthorNumbering(LabelResidueKey {
+            asym: "A".into(),
+            seq: LabelSeqId::new(1).unwrap()
+        }))
+    );
+}
+
+#[test]
+fn null_author_values_are_errors_when_the_column_exists() {
+    let error = parse_mmcif(&with_atom_site("A A GLY N . N 1 ? 0 0 0")).unwrap_err();
+    assert!(matches!(
+        error,
+        ReadError::InvalidValue {
+            item: "auth_seq_id",
+            ..
+        }
+    ));
+    let error = parse_mmcif(&with_atom_site("A ? GLY N . N 1 1 0 0 0")).unwrap_err();
+    assert!(matches!(
+        error,
+        ReadError::InvalidValue {
+            item: "auth_asym_id",
+            ..
+        }
+    ));
+}

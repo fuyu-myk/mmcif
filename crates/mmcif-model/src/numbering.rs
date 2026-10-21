@@ -4,6 +4,7 @@ use crate::ids::{AuthAsymId, LabelAsymId};
 use crate::key::{AuthResidueKey, LabelResidueKey};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum NumberingError {
     #[error("no chain with label_asym_id {0}")]
     UnknownLabelChain(LabelAsymId),
@@ -17,6 +18,8 @@ pub enum NumberingError {
     NotFound(AuthResidueKey),
     #[error("{0} is a polymer residue but the file carries no label numbering")]
     Unnumbered(AuthResidueKey),
+    #[error("{0} has no author numbering in this file")]
+    NoAuthorNumbering(LabelResidueKey),
     #[error("{key} maps to {} label positions", candidates.len())]
     Ambiguous {
         key: AuthResidueKey,
@@ -32,6 +35,7 @@ pub struct Numbering {
     auth_chains: HashSet<AuthAsymId>,
     non_polymer: HashSet<AuthResidueKey>,
     unnumbered: HashSet<AuthResidueKey>,
+    label_only: HashSet<LabelAsymId>,
     branch: HashMap<(LabelAsymId, u32), AuthResidueKey>,
 }
 
@@ -62,6 +66,11 @@ impl Numbering {
         self.unnumbered.insert(auth);
     }
 
+    pub(crate) fn insert_label_only(&mut self, label_asym: LabelAsymId) {
+        self.label_chains.insert(label_asym.clone());
+        self.label_only.insert(label_asym);
+    }
+
     pub(crate) fn insert_branch(&mut self, asym: LabelAsymId, num: u32, auth: AuthResidueKey) {
         self.branch.insert((asym, num), auth);
     }
@@ -74,7 +83,9 @@ impl Numbering {
         if let Some(auth) = self.label_to_auth.get(key) {
             return Ok(auth.clone());
         }
-        if self.label_chains.contains(&key.asym) {
+        if self.label_only.contains(&key.asym) {
+            Err(NumberingError::NoAuthorNumbering(key.clone()))
+        } else if self.label_chains.contains(&key.asym) {
             Err(NumberingError::NotInSequence(key.clone()))
         } else {
             Err(NumberingError::UnknownLabelChain(key.asym.clone()))

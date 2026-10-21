@@ -52,6 +52,10 @@ pub(crate) struct Field<'a> {
 }
 
 impl<'a> Field<'a> {
+    pub fn is_present(&self) -> bool {
+        self.column.is_some()
+    }
+
     fn value(&self, row: usize) -> Option<Value<'a>> {
         self.column.and_then(|column| column.get(row))
     }

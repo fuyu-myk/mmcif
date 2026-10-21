@@ -21,7 +21,10 @@ impl Structure {
     }
 
     pub fn from_block(block: &Block<'_>) -> Result<Structure, ReadError> {
-        let mut models = atom_site::read_models(block)?;
+        let atom_site::AtomSite {
+            mut models,
+            has_author_numbering,
+        } = atom_site::read_models(block)?;
         let entry_id = block
             .category("entry")
             .and_then(|entry| entry.column("id"))
@@ -32,7 +35,7 @@ impl Structure {
         assign_missing_entities(&mut models, &entities);
         Ok(Structure {
             entry_id,
-            numbering: numbering::read_numbering(block, &models)?,
+            numbering: numbering::read_numbering(block, &models, has_author_numbering)?,
             entities,
             models,
             operators: assemblies::read_operators(block)?,

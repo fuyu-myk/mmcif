@@ -83,14 +83,28 @@ impl<'a> AtomSiteFields<'a> {
     }
 
     fn auth_seq(&self, row: usize, label_seq: Option<LabelSeqId>) -> Result<AuthSeqId, ReadError> {
-        match (self.auth_seq.parse::<i32>(row)?, label_seq) {
-            (Some(value), _) => Ok(AuthSeqId::new(value)),
-            (None, Some(label)) => i32::try_from(label.get()).map(AuthSeqId::new).map_err(|_| {
+        if self.auth_seq.is_present() {
+            return self.auth_seq.required_parse(row).map(AuthSeqId::new);
+        }
+        match label_seq {
+            Some(label) => i32::try_from(label.get()).map(AuthSeqId::new).map_err(|_| {
                 self.label_seq
                     .invalid(row, &label.to_string(), "out of range")
             }),
-            (None, None) => Err(self.auth_seq.invalid(row, "", "missing value")),
+            None => Err(self.auth_seq.invalid(row, "", "missing value")),
         }
+    }
+
+    fn auth_asym(&self, row: usize, label_asym: &'a str) -> Result<&'a str, ReadError> {
+        if self.auth_asym.is_present() {
+            self.auth_asym.required_text(row)
+        } else {
+            Ok(label_asym)
+        }
+    }
+
+    fn has_author_numbering(&self) -> bool {
+        self.auth_asym.is_present() && self.auth_seq.is_present()
     }
 
     fn element(&self, row: usize) -> Result<Element, ReadError> {
@@ -236,7 +250,12 @@ impl ChainBuilder {
     }
 }
 
-pub(crate) fn read_models(block: &Block<'_>) -> Result<Vec<Model>, ReadError> {
+pub(crate) struct AtomSite {
+    pub models: Vec<Model>,
+    pub has_author_numbering: bool,
+}
+
+pub(crate) fn read_models(block: &Block<'_>) -> Result<AtomSite, ReadError> {
     let table = Table::required(block, "atom_site")?;
     let fields = AtomSiteFields::new(&table)?;
     let mut models: Vec<ModelBuilder> = Vec::new();
@@ -252,7 +271,7 @@ pub(crate) fn read_models(block: &Block<'_>) -> Result<Vec<Model>, ReadError> {
             models.len() - 1
         });
         let label_asym = fields.label_asym.required_text(row)?;
-        let auth_asym = fields.auth_asym.text(row).unwrap_or(label_asym);
+        let auth_asym = fields.auth_asym(row, label_asym)?;
         let chain = models[index].chain_for(label_asym, auth_asym, fields.entity.text(row))?;
         let label_seq = fields.label_seq(row)?;
         let auth_seq = fields.auth_seq(row, label_seq)?;
@@ -271,5 +290,8 @@ pub(crate) fn read_models(block: &Block<'_>) -> Result<Vec<Model>, ReadError> {
             .atoms
             .push(atom);
     }
-    Ok(models.into_iter().map(ModelBuilder::finish).collect())
+    Ok(AtomSite {
+        models: models.into_iter().map(ModelBuilder::finish).collect(),
+        has_author_numbering: fields.has_author_numbering(),
+    })
 }
