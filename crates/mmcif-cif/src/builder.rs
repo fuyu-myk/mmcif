@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::columns::{RawColumn, RawTable};
 use crate::document::{Cell, Document, RawBlock, RawEntry, RawLoop, Span};
 use crate::value::{InvalidValue, Value};
 
@@ -64,6 +65,45 @@ impl DocumentBuilder {
             start: start as u32,
             len: (end - start) as u32,
         })
+    }
+
+    pub(crate) fn text_cell(&mut self, value: Value<'_>) -> Result<Cell, BuildError> {
+        self.store_value(value)
+    }
+
+    pub(crate) fn push_table(
+        &mut self,
+        tags: &[&str],
+        columns: Vec<RawColumn>,
+    ) -> Result<(), BuildError> {
+        self.close_loop()?;
+        if self.blocks.is_empty() {
+            return Err(BuildError::NoBlock);
+        }
+        if tags.is_empty() {
+            return Err(BuildError::EmptyLoop);
+        }
+        let rows = columns.first().map_or(0, RawColumn::len);
+        if rows == 0 {
+            return Err(BuildError::LoopWithoutRows);
+        }
+        if columns.len() != tags.len() || columns.iter().any(|column| column.len() != rows) {
+            return Err(BuildError::RaggedLoop {
+                values: columns.iter().map(RawColumn::len).sum(),
+                tags: tags.len(),
+            });
+        }
+        let tags = tags
+            .iter()
+            .map(|tag| self.tag_span(tag))
+            .collect::<Result<Vec<_>, _>>()?;
+        let block = self.blocks.last_mut().ok_or(BuildError::NoBlock)?;
+        block.entries.push(RawEntry::Table(RawTable {
+            tags,
+            columns,
+            rows,
+        }));
+        Ok(())
     }
 
     fn store_value(&mut self, value: Value<'_>) -> Result<Cell, BuildError> {

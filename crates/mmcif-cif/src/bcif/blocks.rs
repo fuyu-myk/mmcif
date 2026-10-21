@@ -1,11 +1,15 @@
-use super::array::Array;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
+use super::array::{Array, FloatWidth};
 use super::encoding::decode;
 use super::msgpack::{self, MsgValue};
 use super::record::Record;
 use super::{BcifError, BcifLimits, Budget};
 use crate::builder::DocumentBuilder;
-use crate::document::Document;
-use crate::value::Value;
+use crate::columns::{Numbers, NumericColumn, RawColumn};
+use crate::document::{Cell, Document};
+use crate::value::{Value, ValueKind};
 
 pub(crate) fn decode_document(bytes: &[u8], limits: BcifLimits) -> Result<Document, BcifError> {
     let mut budget = Budget::new(limits);
@@ -150,14 +154,95 @@ fn add_category(
         }
         return Ok(());
     }
-    builder.start_loop(columns.iter().map(|column| column.tag.as_str()))?;
-    for row in 0..rows {
-        for column in &columns {
-            builder.push(column.value(row, &mut buffer)?)?;
+    let tags: Vec<String> = columns.iter().map(|column| column.tag.clone()).collect();
+    let raw_columns = columns
+        .into_iter()
+        .map(|column| column.into_raw_column(builder))
+        .collect::<Result<Vec<_>, _>>()?;
+    builder.push_table(
+        &tags.iter().map(String::as_str).collect::<Vec<_>>(),
+        raw_columns,
+    )?;
+    check_text(builder, max_text_bytes)
+}
+
+impl Presence {
+    fn kind(self) -> ValueKind {
+        match self {
+            Presence::Present => ValueKind::Bare,
+            Presence::Inapplicable => ValueKind::Inapplicable,
+            Presence::Unknown => ValueKind::Unknown,
         }
-        check_text(builder, max_text_bytes)?;
     }
-    Ok(())
+}
+
+impl DecodedColumn<'_> {
+    fn into_raw_column(self, builder: &mut DocumentBuilder) -> Result<RawColumn, BcifError> {
+        let DecodedColumn { tag, values, mask } = self;
+        let numbers = match values {
+            Array::Ints(values) => Numbers::Int(values),
+            Array::Bytes(bytes) => {
+                Numbers::Int(bytes.iter().map(|&byte| i64::from(byte)).collect())
+            }
+            Array::Decimals(scaled, decimals) => Numbers::Decimal {
+                scaled,
+                decimals: u8::try_from(decimals)
+                    .map_err(|_| BcifError::Overflow("fixed-point decimals"))?,
+            },
+            Array::Floats(values, FloatWidth::Single) => {
+                Numbers::Single(values.iter().map(|&value| value as f32).collect())
+            }
+            Array::Floats(values, FloatWidth::Double) => Numbers::Double(values),
+            Array::Strings(strings) => {
+                return text_column(builder, &tag, &strings, mask.as_deref());
+            }
+        };
+        let mask = mask.map(|mask| mask.into_iter().map(Presence::kind).collect());
+        Ok(RawColumn::Numeric(NumericColumn::new(numbers, mask)))
+    }
+}
+
+fn text_column(
+    builder: &mut DocumentBuilder,
+    tag: &str,
+    strings: &[&str],
+    mask: Option<&[Presence]>,
+) -> Result<RawColumn, BcifError> {
+    let mut stored: HashMap<(usize, usize), Cell> = HashMap::new();
+    let mut nulls: [Option<Cell>; 2] = [None, None];
+    let mut cells = Vec::with_capacity(strings.len());
+    for (row, text) in strings.iter().enumerate() {
+        let presence = mask
+            .and_then(|mask| mask.get(row))
+            .copied()
+            .unwrap_or(Presence::Present);
+        let cell = match presence {
+            Presence::Inapplicable | Presence::Unknown => {
+                let (slot, value) = if presence == Presence::Inapplicable {
+                    (0, Value::INAPPLICABLE)
+                } else {
+                    (1, Value::UNKNOWN)
+                };
+                match nulls[slot] {
+                    Some(cell) => cell,
+                    None => *nulls[slot].insert(builder.text_cell(value)?),
+                }
+            }
+            Presence::Present => match stored.entry((text.as_ptr() as usize, text.len())) {
+                Entry::Occupied(entry) => *entry.get(),
+                Entry::Vacant(entry) => {
+                    if text.contains("\n;") {
+                        return Err(BcifError::UnrepresentableValue {
+                            tag: tag.to_owned(),
+                        });
+                    }
+                    *entry.insert(builder.text_cell(Value::text(text))?)
+                }
+            },
+        };
+        cells.push(cell);
+    }
+    Ok(RawColumn::Text(cells))
 }
 
 #[cfg(test)]

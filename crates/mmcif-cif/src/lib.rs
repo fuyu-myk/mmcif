@@ -1,5 +1,6 @@
 mod bcif;
 mod builder;
+mod columns;
 mod document;
 mod error;
 mod handle;
@@ -11,6 +12,7 @@ mod write;
 
 pub use bcif::{BcifError, BcifLimits};
 pub use builder::{BuildError, DocumentBuilder};
+pub use columns::TypedValue;
 pub use document::{Block, Category, Column, Document, Entry, Frame, Loop, Pair, StreamedBlock};
 pub use error::{Error, ParseError, ParseErrorKind};
 pub use handle::{BlockHandle, CategoryHandle};

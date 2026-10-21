@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::columns::{NumericColumn, RawColumn, RawTable, TypedValue};
 use crate::error::{Error, ParseError};
 use crate::parse::Parser;
 use crate::source::{MappedText, Source, read_text};
@@ -81,6 +82,7 @@ pub(crate) struct RawBlock {
 pub(crate) enum RawEntry {
     Pair { tag: Span, value: Cell },
     Loop(RawLoop),
+    Table(RawTable),
     Frame(RawFrame),
 }
 
@@ -222,13 +224,16 @@ impl<'a> Block<'a> {
         let matching =
             |tag: Span| category_of(tag.resolve(src)).filter(|c| c.eq_ignore_ascii_case(name));
         for raw in &self.raw.entries {
-            if let RawEntry::Loop(lp) = raw
-                && let Some(found) = lp.tags.iter().find_map(|&tag| matching(tag))
-            {
+            let (tags, layout) = match raw {
+                RawEntry::Loop(lp) => (&lp.tags, Layout::Loop(lp)),
+                RawEntry::Table(table) => (&table.tags, Layout::Table(table)),
+                _ => continue,
+            };
+            if let Some(found) = tags.iter().find_map(|&tag| matching(tag)) {
                 return Some(Category {
                     src,
                     name: found,
-                    layout: Layout::Loop(lp),
+                    layout,
                 });
             }
         }
@@ -306,7 +311,14 @@ impl<'a> Entry<'a> {
                 tag: *tag,
                 value: *value,
             }),
-            RawEntry::Loop(raw) => Entry::Loop(Loop { src, raw }),
+            RawEntry::Loop(raw) => Entry::Loop(Loop {
+                src,
+                data: LoopData::Rows(raw),
+            }),
+            RawEntry::Table(raw) => Entry::Loop(Loop {
+                src,
+                data: LoopData::Columns(raw),
+            }),
             RawEntry::Frame(raw) => Entry::Frame(Frame { src, raw }),
         }
     }
@@ -345,32 +357,57 @@ impl fmt::Debug for Pair<'_> {
 }
 
 #[derive(Clone, Copy)]
+enum LoopData<'a> {
+    Rows(&'a RawLoop),
+    Columns(&'a RawTable),
+}
+
+#[derive(Clone, Copy)]
 pub struct Loop<'a> {
     src: &'a str,
-    raw: &'a RawLoop,
+    data: LoopData<'a>,
 }
 
 impl<'a> Loop<'a> {
+    fn raw_tags(&self) -> &'a [Span] {
+        match self.data {
+            LoopData::Rows(raw) => &raw.tags,
+            LoopData::Columns(raw) => &raw.tags,
+        }
+    }
+
     pub fn tags(&self) -> impl ExactSizeIterator<Item = &'a str> + use<'a> {
         let src = self.src;
-        self.raw.tags.iter().map(move |tag| tag.resolve(src))
+        self.raw_tags().iter().map(move |tag| tag.resolve(src))
     }
 
     pub fn row_count(&self) -> usize {
-        self.raw.cells.len() / self.raw.tags.len()
+        match self.data {
+            LoopData::Rows(raw) => raw.cells.len() / raw.tags.len(),
+            LoopData::Columns(raw) => raw.rows,
+        }
     }
 
     pub fn values(&self) -> impl ExactSizeIterator<Item = Value<'a>> + use<'a> {
-        let src = self.src;
-        self.raw.cells.iter().map(move |cell| cell.resolve(src))
+        let lp = *self;
+        let width = self.raw_tags().len();
+        (0..self.row_count() * width).map(move |index| {
+            lp.value(index / width, index % width)
+                .expect("index is within the loop")
+        })
     }
 
     pub fn value(&self, row: usize, column: usize) -> Option<Value<'a>> {
-        if column >= self.raw.tags.len() {
-            return None;
+        match self.data {
+            LoopData::Rows(raw) => {
+                if column >= raw.tags.len() {
+                    return None;
+                }
+                let index = row.checked_mul(raw.tags.len())?.checked_add(column)?;
+                raw.cells.get(index).map(|cell| cell.resolve(self.src))
+            }
+            LoopData::Columns(raw) => column_cells(raw.columns.get(column)?).get(self.src, row),
         }
-        let index = row.checked_mul(self.raw.tags.len())?.checked_add(column)?;
-        self.raw.cells.get(index).map(|cell| cell.resolve(self.src))
     }
 }
 
@@ -424,6 +461,7 @@ impl fmt::Debug for Frame<'_> {
 #[derive(Debug, Clone)]
 enum Layout<'a> {
     Loop(&'a RawLoop),
+    Table(&'a RawTable),
     Pairs(Vec<(Span, Cell)>),
 }
 
@@ -442,6 +480,7 @@ impl<'a> Category<'a> {
     pub fn row_count(&self) -> usize {
         match &self.layout {
             Layout::Loop(lp) => lp.cells.len() / lp.tags.len(),
+            Layout::Table(table) => table.rows,
             Layout::Pairs(_) => 1,
         }
     }
@@ -452,14 +491,16 @@ impl<'a> Category<'a> {
 
     pub fn items(&self) -> Vec<&'a str> {
         let src = self.src;
-        match &self.layout {
-            Layout::Loop(lp) => lp
-                .tags
-                .iter()
+        let owned = |tags: &'a [Span]| -> Vec<&'a str> {
+            tags.iter()
                 .map(|t| t.resolve(src))
                 .filter(|tag| self.owns(tag))
                 .map(item_of)
-                .collect(),
+                .collect()
+        };
+        match &self.layout {
+            Layout::Loop(lp) => owned(&lp.tags),
+            Layout::Table(table) => owned(&table.tags),
             Layout::Pairs(pairs) => pairs.iter().map(|(t, _)| item_of(t.resolve(src))).collect(),
         }
     }
@@ -480,6 +521,9 @@ impl<'a> Category<'a> {
                 offset: lp.tags.iter().position(matches)?,
                 stride: lp.tags.len(),
             },
+            Layout::Table(table) => {
+                column_cells(&table.columns[table.tags.iter().position(matches)?])
+            }
             Layout::Pairs(pairs) => ColumnCells::Single(pairs.iter().find(|(t, _)| matches(t))?.1),
         };
         Some(Column { src, cells })
@@ -494,6 +538,33 @@ enum ColumnCells<'a> {
         stride: usize,
     },
     Single(Cell),
+    Text(&'a [Cell]),
+    Numeric(&'a NumericColumn),
+}
+
+fn column_cells(column: &RawColumn) -> ColumnCells<'_> {
+    match column {
+        RawColumn::Text(cells) => ColumnCells::Text(cells),
+        RawColumn::Numeric(numeric) => ColumnCells::Numeric(numeric),
+    }
+}
+
+impl<'a> ColumnCells<'a> {
+    fn get(self, src: &'a str, row: usize) -> Option<Value<'a>> {
+        match self {
+            ColumnCells::Strided {
+                cells,
+                offset,
+                stride,
+            } => {
+                let index = row.checked_mul(stride)?.checked_add(offset)?;
+                cells.get(index).map(|cell| cell.resolve(src))
+            }
+            ColumnCells::Single(cell) => (row == 0).then(|| cell.resolve(src)),
+            ColumnCells::Text(cells) => cells.get(row).map(|cell| cell.resolve(src)),
+            ColumnCells::Numeric(column) => column.value(row),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -507,6 +578,8 @@ impl<'a> Column<'a> {
         match self.cells {
             ColumnCells::Strided { cells, stride, .. } => cells.len() / stride,
             ColumnCells::Single(_) => 1,
+            ColumnCells::Text(cells) => cells.len(),
+            ColumnCells::Numeric(column) => column.len(),
         }
     }
 
@@ -515,16 +588,13 @@ impl<'a> Column<'a> {
     }
 
     pub fn get(&self, row: usize) -> Option<Value<'a>> {
+        self.cells.get(self.src, row)
+    }
+
+    pub fn typed(&self, row: usize) -> Option<TypedValue> {
         match self.cells {
-            ColumnCells::Strided {
-                cells,
-                offset,
-                stride,
-            } => {
-                let index = row.checked_mul(stride)?.checked_add(offset)?;
-                cells.get(index).map(|cell| cell.resolve(self.src))
-            }
-            ColumnCells::Single(cell) => (row == 0).then(|| cell.resolve(self.src)),
+            ColumnCells::Numeric(column) => column.typed(row),
+            _ => None,
         }
     }
 
