@@ -1,8 +1,10 @@
 use mmcif_ir::{Constraint, Geometry, Identity, Slot, Spec};
 use mmcif_spec::{Design, Diagnostic, SegmentKind, SourceId, Span};
 
+#[non_exhaustive]
 pub struct Capabilities {
     pub name: &'static str,
+    pub schema: &'static str,
     pub designed_identity: bool,
     pub bonds: bool,
     pub distances: bool,

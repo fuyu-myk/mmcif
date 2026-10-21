@@ -213,3 +213,13 @@ fn every_backend_is_reachable_by_name() {
     assert!(!Backend::Rfd3.capabilities().bonds);
     assert!(Backend::BoltzGen.capabilities().bonds);
 }
+
+#[test]
+fn every_backend_names_the_schema_it_was_written_against() {
+    for backend in Backend::all() {
+        let schema = backend.schema();
+        assert!(!schema.is_empty(), "{} has no schema", backend.name());
+        assert_ne!(schema, backend.name());
+    }
+    assert!(Backend::Rfd3.schema().contains("foundry"));
+}

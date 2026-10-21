@@ -38,6 +38,14 @@ impl Backend {
     pub fn names() -> [&'static str; 2] {
         ["boltzgen", "rfd3"]
     }
+
+    pub fn all() -> [Backend; 2] {
+        [Backend::BoltzGen, Backend::Rfd3]
+    }
+
+    pub fn schema(self) -> &'static str {
+        self.capabilities().schema
+    }
 }
 
 pub fn lower(

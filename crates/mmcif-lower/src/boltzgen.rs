@@ -9,6 +9,7 @@ use crate::ranges;
 
 pub const CAPABILITIES: Capabilities = Capabilities {
     name: "boltzgen",
+    schema: "boltzgen design specification, read 2026-10-21",
     designed_identity: true,
     bonds: true,
     distances: false,

@@ -6,6 +6,7 @@ use crate::ranges;
 
 pub const CAPABILITIES: Capabilities = Capabilities {
     name: "rfd3",
+    schema: "RosettaCommons/foundry v0.1.9 models/rfd3",
     designed_identity: false,
     bonds: false,
     distances: false,

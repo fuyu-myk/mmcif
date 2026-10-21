@@ -4,27 +4,33 @@ use mmcif_ir::{Corner, Instantiated, SegmentId};
 use mmcif_lower::{Backend, lower};
 use mmcif_spec::{Checked, Report, check_path};
 
-const USAGE: &str = "usage: mmcif <command> <specification>
+const COMMANDS: &str = "usage: mmcif <command> <specification>
 
 commands:
   check <spec.yaml>              report problems in a design specification
   show <spec.yaml>               print what the specification resolves to
   lower <spec.yaml> --to <name>  write the specification for a backend
 
-backends:
-  boltzgen                       design specification yaml
-  rfd3                           RFdiffusion3 input json
+backends:";
 
-options:
+const OPTIONS: &str = "options:
   -h, --help                     print this message
   -V, --version                  print the version";
+
+fn help() -> String {
+    let backends: String = Backend::all()
+        .iter()
+        .map(|backend| format!("  {:30} {}\n", backend.name(), backend.schema()))
+        .collect();
+    format!("{COMMANDS}\n{backends}\n{OPTIONS}")
+}
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
         None => usage("no command given"),
         Some("-h" | "--help") => {
-            println!("{USAGE}");
+            println!("{}", help());
             ExitCode::SUCCESS
         }
         Some("-V" | "--version") => {
@@ -55,7 +61,7 @@ fn main() -> ExitCode {
 }
 
 fn usage(problem: &str) -> ExitCode {
-    eprintln!("mmcif: {problem}\n\n{USAGE}");
+    eprintln!("mmcif: {problem}\n\n{}", help());
     ExitCode::from(2)
 }
 
