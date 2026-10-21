@@ -1,6 +1,7 @@
 mod ccd;
 mod document;
 mod errors;
+mod geom;
 mod hierarchy;
 mod structure;
 
@@ -22,6 +23,7 @@ fn mmcif_io(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<hierarchy::PyChain>()?;
     module.add_class::<hierarchy::PyResidue>()?;
     module.add_class::<hierarchy::PyAtom>()?;
+    module.add_class::<geom::PyNeighbourGrid>()?;
     module.add_class::<ccd::PyCcdIndex>()?;
     module.add_class::<ccd::PyComponent>()?;
     module.add_function(wrap_pyfunction!(structure::read, module)?)?;

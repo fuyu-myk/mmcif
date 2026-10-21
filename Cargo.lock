@@ -436,6 +436,7 @@ version = "0.1.0"
 dependencies = [
  "mmcif-ccd",
  "mmcif-cif",
+ "mmcif-geom",
  "mmcif-model",
  "numpy",
  "pyo3",
