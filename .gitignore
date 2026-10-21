@@ -6,3 +6,6 @@
 /fuzz/corpus
 /fuzz/artifacts
 __pycache__/
+/crates/mmcif-py/.venv
+/crates/mmcif-py/dist
+.pytest_cache/
