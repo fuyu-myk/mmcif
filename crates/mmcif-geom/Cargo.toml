@@ -1,0 +1,24 @@
+[package]
+name = "mmcif-geom"
+description = "Neighbour grid queries over atomic coordinates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "grid"
+harness = false
+
+[lints]
+workspace = true

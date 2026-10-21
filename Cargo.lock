@@ -404,6 +404,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcif-geom"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "mmcif-mem"
 version = "0.0.0"
 dependencies = [
