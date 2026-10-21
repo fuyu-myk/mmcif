@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+keywords = ["ccd", "pdb", "chemical-components", "mmcif", "bioinformatics"]
+categories = ["science::computational-chemistry::cheminformatics", "science::bioinformatics"]
 
 [dependencies]
 mmcif-cif.workspace = true
