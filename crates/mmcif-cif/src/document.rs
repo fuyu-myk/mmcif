@@ -213,7 +213,11 @@ impl<'a> Block<'a> {
     }
 
     pub fn category(&self, name: &str) -> Option<Category<'a>> {
-        let name = name.strip_prefix('_').unwrap_or(name);
+        self.category_named(name)
+            .or_else(|| self.category_named(name.strip_prefix('_')?))
+    }
+
+    fn category_named(&self, name: &str) -> Option<Category<'a>> {
         let src = self.src;
         let matching =
             |tag: Span| category_of(tag.resolve(src)).filter(|c| c.eq_ignore_ascii_case(name));

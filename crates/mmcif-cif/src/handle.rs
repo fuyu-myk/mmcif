@@ -11,7 +11,7 @@ pub struct BlockHandle {
 #[derive(Debug, Clone)]
 pub struct CategoryHandle {
     block: BlockHandle,
-    name: Box<str>,
+    query: Box<str>,
 }
 
 impl BlockHandle {
@@ -44,10 +44,10 @@ impl BlockHandle {
     }
 
     pub fn category(&self, name: &str) -> Option<CategoryHandle> {
-        let found = self.view().category(name)?.name().into();
+        self.view().category(name)?;
         Some(CategoryHandle {
             block: self.clone(),
-            name: found,
+            query: name.into(),
         })
     }
 }
@@ -58,14 +58,14 @@ impl CategoryHandle {
     }
 
     pub fn name(&self) -> &str {
-        &self.name
+        self.view().name()
     }
 
     pub fn view(&self) -> Category<'_> {
         self.block
             .view()
-            .category(&self.name)
-            .expect("category handles are created for existing categories")
+            .category(&self.query)
+            .expect("documents are immutable, so a query that resolved once resolves again")
     }
 }
 
@@ -86,5 +86,28 @@ mod tests {
         assert_eq!(blocks[0].view().name(), "a");
         assert!(blocks[0].category("z").is_none());
         assert!(BlockHandle::new(Arc::clone(blocks[0].document()), 2).is_none());
+    }
+
+    #[test]
+    fn categories_whose_names_start_with_an_underscore_resolve() {
+        let document = Arc::new(
+            Document::parse(
+                "data_a
+__x.y 1
+_x.z 2
+",
+            )
+            .unwrap(),
+        );
+        let block = BlockHandle::new(document, 0).unwrap();
+        assert_eq!(block.view().category_names(), ["_x", "x"]);
+        let odd = block.category("_x").unwrap();
+        assert_eq!((odd.name(), odd.view().items()), ("_x", vec!["y"]));
+        let plain = block.category("x").unwrap();
+        assert_eq!((plain.name(), plain.view().items()), ("x", vec!["z"]));
+        assert_eq!(
+            block.category("_x_missing").map(|c| c.name().to_owned()),
+            None
+        );
     }
 }
