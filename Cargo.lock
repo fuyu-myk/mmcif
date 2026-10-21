@@ -413,6 +413,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcif-ir"
+version = "0.0.0"
+dependencies = [
+ "mmcif-model",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "mmcif-mem"
 version = "0.0.0"
 dependencies = [

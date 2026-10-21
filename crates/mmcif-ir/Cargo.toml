@@ -1,0 +1,19 @@
+[package]
+name = "mmcif-ir"
+description = "Design specification IR: slots, the determinacy lattice, constraints and instantiation"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mmcif-model.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
