@@ -191,6 +191,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcif-ccd"
+version = "0.1.0"
+dependencies = [
+ "memmap2",
+ "mmcif-cif",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "mmcif-cif"
 version = "0.1.0"
 dependencies = [

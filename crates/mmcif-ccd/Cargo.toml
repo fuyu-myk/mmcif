@@ -1,0 +1,18 @@
+[package]
+name = "mmcif-ccd"
+description = "Compiled, versioned index of the Chemical Component Dictionary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mmcif-cif.workspace = true
+memmap2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
