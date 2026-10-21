@@ -157,3 +157,46 @@ constraints:
     assert!(!again.has_errors(), "{once}\n{}", again.render());
     assert!(again.report.is_empty(), "{}", again.render());
 }
+
+#[test]
+fn a_specification_using_every_supported_feature_survives() {
+    round_trip(
+        "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+            res_index: 1..4
+        - chain:
+            id: B
+      design:
+        - chain:
+            id: A
+            res_index: 4
+      secondary_structure:
+        - chain:
+            id: A
+            helix: 4
+  - protein:
+      id: X
+      sequence: AAVTTTTPPP
+  - protein:
+      id: G
+      sequence: 15..20AAAAAAVTTTT18PPP
+  - protein:
+      id: R
+      sequence: 3..5C6C3
+  - ligand:
+      id: Q
+      ccd: WHL
+constraints:
+  - bond:
+      atom1: [R, 4, SG]
+      atom2: [Q, 1, CK]
+  - bond:
+      atom1: [R, 11, SG]
+      atom2: [Q, 1, CH]
+",
+    );
+}
