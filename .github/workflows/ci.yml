@@ -9,6 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  PYO3_BUILD_EXTENSION_MODULE: "1"
 
 jobs:
   rust:
