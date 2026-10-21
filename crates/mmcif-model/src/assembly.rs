@@ -1,10 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::expression::{InvalidExpression, OperatorExpression};
 use crate::ids::{AssemblyId, LabelAsymId, OperatorId};
 use crate::model::{Model, ModelBuilder};
 use crate::structure::Structure;
 use crate::view::ChainRef;
+
+const MAX_ASSEMBLY_ATOMS: u64 = 1 << 28;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
@@ -155,9 +157,24 @@ impl Structure {
         let assembly = self
             .assembly(id)
             .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
+        let operators: HashMap<&str, &Operator> = self
+            .operators
+            .iter()
+            .map(|operator| (operator.id.as_str(), operator))
+            .collect();
         let mut plans = Vec::with_capacity(assembly.generators.len());
         let mut total_atoms: u64 = 0;
         for generator in &assembly.generators {
+            if let Some(missing) = generator
+                .operators
+                .operator_ids()
+                .find(|operator| !operators.contains_key(operator.as_str()))
+            {
+                return Err(AssemblyError::UnknownOperator {
+                    assembly: id.clone(),
+                    operator: missing,
+                });
+            }
             let wanted: HashSet<&LabelAsymId> = generator.asym_ids.iter().collect();
             let selected: Vec<ChainRef<'_>> = model
                 .chains()
@@ -168,17 +185,20 @@ impl Structure {
                 total_atoms.saturating_add(atoms.saturating_mul(generator.operators.len() as u64));
             plans.push((generator, selected));
         }
-        if total_atoms > u64::from(u32::MAX) {
-            return Err(AssemblyError::TooLarge {
-                assembly: id.clone(),
-                atoms: total_atoms,
-            });
+        let too_large = || AssemblyError::TooLarge {
+            assembly: id.clone(),
+            atoms: total_atoms,
+        };
+        if total_atoms > MAX_ASSEMBLY_ATOMS {
+            return Err(too_large());
         }
         let mut builder = ModelBuilder::derived_from(model);
-        builder.reserve_atoms(total_atoms as usize);
+        builder
+            .try_reserve_atoms(total_atoms as usize)
+            .map_err(|_| too_large())?;
         for (generator, selected) in plans {
             for combination in generator.operators.combinations() {
-                let transform = self.combined_transform(id, &combination)?;
+                let transform = combined_transform(&operators, &combination);
                 for chain in &selected {
                     copy_transformed_chain(&mut builder, model, *chain, &transform, &combination);
                 }
@@ -186,24 +206,18 @@ impl Structure {
         }
         Ok(builder.finish())
     }
+}
 
-    fn combined_transform(
-        &self,
-        assembly: &AssemblyId,
-        combination: &[OperatorId],
-    ) -> Result<Transform, AssemblyError> {
-        combination
-            .iter()
-            .try_fold(Transform::IDENTITY, |acc, operator_id| {
-                let operator = self.operator(operator_id.as_str()).ok_or_else(|| {
-                    AssemblyError::UnknownOperator {
-                        assembly: assembly.clone(),
-                        operator: operator_id.clone(),
-                    }
-                })?;
-                Ok(acc.compose(&operator.transform))
-            })
-    }
+fn combined_transform(
+    operators: &HashMap<&str, &Operator>,
+    combination: &[OperatorId],
+) -> Transform {
+    combination
+        .iter()
+        .fold(Transform::IDENTITY, |acc, operator_id| {
+            let operator = operators[operator_id.as_str()];
+            acc.compose(&operator.transform)
+        })
 }
 
 fn copy_transformed_chain(

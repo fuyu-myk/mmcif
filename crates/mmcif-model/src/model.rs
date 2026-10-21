@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, TryReserveError};
 use std::ops::Range;
 
 use crate::ids::{
@@ -172,6 +172,10 @@ impl Model {
         &self.atoms.serials
     }
 
+    pub fn atom_residue_indices(&self) -> &[u32] {
+        &self.atoms.residues
+    }
+
     pub(crate) fn atom_name(&self, atom: usize) -> &AtomName {
         &self.atoms.name_table[self.atoms.names[atom] as usize]
     }
@@ -230,6 +234,19 @@ impl ModelBuilder {
             .map(|(index, name)| (Box::from(name.as_str()), to_u32(index)))
             .collect();
         builder
+    }
+
+    pub fn try_reserve_atoms(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        let atoms = &mut self.atoms;
+        atoms.names.try_reserve(additional)?;
+        atoms.elements.try_reserve(additional)?;
+        atoms.altlocs.try_reserve(additional)?;
+        atoms.serials.try_reserve(additional)?;
+        atoms.positions.try_reserve(additional)?;
+        atoms.occupancies.try_reserve(additional)?;
+        atoms.b_factors.try_reserve(additional)?;
+        atoms.charges.try_reserve(additional)?;
+        atoms.residues.try_reserve(additional)
     }
 
     pub fn reserve_atoms(&mut self, additional: usize) {
@@ -357,9 +374,15 @@ impl ModelBuilder {
             *residue = final_index[*residue as usize];
         }
         sort_atoms_by_residue(&mut atoms, order.len());
+        compact_names(&mut atoms);
+        let mut slots: Vec<Option<ResidueRecord>> = residues.into_iter().map(Some).collect();
         let mut residues: Vec<ResidueRecord> = order
             .iter()
-            .map(|&slot| residues[slot as usize].clone())
+            .map(|&slot| {
+                slots[slot as usize]
+                    .take()
+                    .expect("each residue slot belongs to exactly one chain")
+            })
             .collect();
         let mut start = 0usize;
         for (index, residue) in residues.iter_mut().enumerate() {
@@ -378,6 +401,20 @@ impl ModelBuilder {
             atoms,
         }
     }
+}
+
+fn compact_names(atoms: &mut AtomColumns) {
+    let mut remap = vec![u32::MAX; atoms.name_table.len()];
+    let mut table = Vec::new();
+    for id in &mut atoms.names {
+        let slot = &mut remap[*id as usize];
+        if *slot == u32::MAX {
+            *slot = to_u32(table.len());
+            table.push(atoms.name_table[*id as usize].clone());
+        }
+        *id = *slot;
+    }
+    atoms.name_table = table;
 }
 
 fn sort_atoms_by_residue(atoms: &mut AtomColumns, residue_count: usize) {

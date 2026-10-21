@@ -464,3 +464,65 @@ fn interleaved_rows_are_grouped_into_contiguous_residues() {
     let atom = model.atoms().nth(4).unwrap();
     assert_eq!(atom.residue().chain().label_asym().as_str(), "B");
 }
+
+fn assembly_document(rows: usize, expression: &str) -> String {
+    let atoms: String = (0..rows).map(|_| "A A GLY N . N 1 1 0 0 0\n").collect();
+    format!(
+        "{}_pdbx_struct_assembly_gen.assembly_id 1\n_pdbx_struct_assembly_gen.oper_expression '{expression}'\n\
+         _pdbx_struct_assembly_gen.asym_id_list A\nloop_\n_pdbx_struct_oper_list.id\n\
+         _pdbx_struct_oper_list.matrix[1][1]\n_pdbx_struct_oper_list.matrix[1][2]\n_pdbx_struct_oper_list.matrix[1][3]\n\
+         _pdbx_struct_oper_list.matrix[2][1]\n_pdbx_struct_oper_list.matrix[2][2]\n_pdbx_struct_oper_list.matrix[2][3]\n\
+         _pdbx_struct_oper_list.matrix[3][1]\n_pdbx_struct_oper_list.matrix[3][2]\n_pdbx_struct_oper_list.matrix[3][3]\n\
+         _pdbx_struct_oper_list.vector[1]\n_pdbx_struct_oper_list.vector[2]\n_pdbx_struct_oper_list.vector[3]\n\
+         1 1 0 0 0 1 0 0 0 1 0 0 0\n",
+        with_atom_site(atoms.trim_end())
+    )
+}
+
+#[test]
+fn undefined_operators_are_reported_before_expansion() {
+    let structure = parse_mmcif(&assembly_document(10, "(1-1000000)")).unwrap();
+    let error = structure
+        .assemble(&AssemblyId::new("1"), structure.first_model().unwrap())
+        .unwrap_err();
+    assert!(
+        matches!(error, AssemblyError::UnknownOperator { ref operator, .. } if operator.as_str() == "2")
+    );
+}
+
+#[test]
+fn oversized_assemblies_fail_before_allocating() {
+    let ones = vec!["1"; 1024].join(",");
+    let structure = parse_mmcif(&assembly_document(300, &format!("({ones})({ones})"))).unwrap();
+    let error = structure
+        .assemble(&AssemblyId::new("1"), structure.first_model().unwrap())
+        .unwrap_err();
+    assert!(matches!(error, AssemblyError::TooLarge { atoms, .. } if atoms == 300 * 1024 * 1024));
+}
+
+#[test]
+fn derived_models_equal_fresh_parses_of_the_same_atoms() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+    let selected = model.single_conformer(AltlocPolicy::Prefer(AltLoc::new('B')));
+    let rows = "AA H1 THR N B N 2 100 1.100 2.100 3.100\nAA H1 THR CA B C 2 100 2.100 2.100 3.100";
+    let fresh = parse_mmcif(&with_atom_site(rows)).unwrap();
+    let selected_threonine: Vec<(String, [f64; 3])> = selected
+        .chain("AA")
+        .unwrap()
+        .residues()
+        .next()
+        .unwrap()
+        .atoms()
+        .map(|a| (a.name().to_string(), a.position()))
+        .collect();
+    let fresh_threonine: Vec<(String, [f64; 3])> = fresh
+        .first_model()
+        .unwrap()
+        .atoms()
+        .map(|a| (a.name().to_string(), a.position()))
+        .collect();
+    assert_eq!(selected_threonine, fresh_threonine);
+    let identity = selected.single_conformer(AltlocPolicy::First);
+    assert_eq!(identity, selected);
+}

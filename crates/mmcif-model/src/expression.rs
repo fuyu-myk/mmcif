@@ -124,6 +124,12 @@ impl OperatorExpression {
         self.len == 0
     }
 
+    pub fn operator_ids(&self) -> impl Iterator<Item = OperatorId> + '_ {
+        self.groups
+            .iter()
+            .flat_map(|group| (0..group.len).map(move |index| group.get(index)))
+    }
+
     pub fn combinations(&self) -> impl ExactSizeIterator<Item = Vec<OperatorId>> + '_ {
         (0..self.len as usize).map(move |index| {
             let mut rest = index as u64;
