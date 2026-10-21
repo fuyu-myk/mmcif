@@ -1,5 +1,7 @@
 use std::io;
 
+use crate::bcif::BcifError;
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("line {line}, column {column}: {kind}")]
 pub struct ParseError {
@@ -62,4 +64,6 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error(transparent)]
     Parse(#[from] ParseError),
+    #[error(transparent)]
+    Bcif(#[from] BcifError),
 }

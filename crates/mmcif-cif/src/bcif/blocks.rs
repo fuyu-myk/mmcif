@@ -1,0 +1,351 @@
+use super::array::Array;
+use super::encoding::decode;
+use super::msgpack::{self, MsgValue};
+use super::record::Record;
+use super::{BcifError, BcifLimits, Budget};
+use crate::builder::DocumentBuilder;
+use crate::document::Document;
+use crate::value::Value;
+
+pub(crate) fn decode_document(bytes: &[u8], limits: BcifLimits) -> Result<Document, BcifError> {
+    let mut budget = Budget::new(limits);
+    let root = msgpack::parse(bytes, &mut budget)?;
+    let root = Record::new(&root, "file")?;
+    let mut builder = DocumentBuilder::new();
+    for block in root.list("dataBlocks")? {
+        let block = Record::new(block, "dataBlocks")?;
+        builder.start_block(block.str("header")?)?;
+        for category in block.list("categories")? {
+            add_category(
+                &mut builder,
+                Record::new(category, "categories")?,
+                &mut budget,
+            )?;
+        }
+    }
+    Ok(builder.finish()?)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Presence {
+    Present,
+    Inapplicable,
+    Unknown,
+}
+
+impl Presence {
+    fn from_mask(value: i64) -> Result<Self, BcifError> {
+        match value {
+            0 => Ok(Presence::Present),
+            1 => Ok(Presence::Inapplicable),
+            2 => Ok(Presence::Unknown),
+            _ => Err(BcifError::InvalidMask(value)),
+        }
+    }
+}
+
+struct DecodedColumn<'v> {
+    tag: String,
+    values: Array<'v>,
+    mask: Option<Vec<Presence>>,
+}
+
+impl<'v> DecodedColumn<'v> {
+    fn decode(
+        category: &str,
+        column: &'v MsgValue<'v>,
+        rows: usize,
+        budget: &mut Budget,
+    ) -> Result<Self, BcifError> {
+        let column = Record::new(column, "columns")?;
+        let tag = format!("_{category}.{}", column.str("name")?);
+        let values = decode_encoded(column.record("data")?, budget)?;
+        check_rows("column data", values.len(), rows)?;
+        let mask = column
+            .optional("mask")
+            .map(|mask| decode_mask(Record::new(mask, "mask")?, rows, budget))
+            .transpose()?;
+        Ok(DecodedColumn { tag, values, mask })
+    }
+
+    fn value<'s>(&'s self, row: usize, buffer: &'s mut String) -> Result<Value<'s>, BcifError> {
+        match self.mask.as_ref().and_then(|mask| mask.get(row)) {
+            Some(Presence::Inapplicable) => return Ok(Value::INAPPLICABLE),
+            Some(Presence::Unknown) => return Ok(Value::UNKNOWN),
+            Some(Presence::Present) | None => {}
+        }
+        let text = self
+            .values
+            .text(row, buffer)
+            .ok_or(BcifError::LengthMismatch {
+                what: "column data",
+                expected: row + 1,
+                actual: self.values.len(),
+            })?;
+        if text.contains("\n;") {
+            return Err(BcifError::UnrepresentableValue {
+                tag: self.tag.clone(),
+            });
+        }
+        Ok(Value::text(text))
+    }
+}
+
+fn check_rows(what: &'static str, actual: usize, expected: usize) -> Result<(), BcifError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(BcifError::LengthMismatch {
+            what,
+            expected,
+            actual,
+        })
+    }
+}
+
+fn decode_encoded<'v>(encoded: Record<'v>, budget: &mut Budget) -> Result<Array<'v>, BcifError> {
+    decode(encoded.bin("data")?, encoded.list("encoding")?, budget)
+}
+
+fn decode_mask(
+    mask: Record<'_>,
+    rows: usize,
+    budget: &mut Budget,
+) -> Result<Vec<Presence>, BcifError> {
+    let values = decode_encoded(mask, budget)?.into_ints("mask")?;
+    check_rows("mask", values.len(), rows)?;
+    values.into_iter().map(Presence::from_mask).collect()
+}
+
+fn add_category(
+    builder: &mut DocumentBuilder,
+    category: Record<'_>,
+    budget: &mut Budget,
+) -> Result<(), BcifError> {
+    let name = category.str("name")?;
+    let name = name.strip_prefix('_').unwrap_or(name);
+    let rows = category.count("rowCount")?;
+    let columns = category
+        .list("columns")?
+        .iter()
+        .map(|column| DecodedColumn::decode(name, column, rows, budget))
+        .collect::<Result<Vec<_>, _>>()?;
+    if rows == 0 || columns.is_empty() {
+        return Ok(());
+    }
+    let mut buffer = String::new();
+    if rows == 1 {
+        for column in &columns {
+            builder.pair(&column.tag, column.value(0, &mut buffer)?)?;
+        }
+        return Ok(());
+    }
+    builder.start_loop(columns.iter().map(|column| column.tag.as_str()))?;
+    for row in 0..rows {
+        for column in &columns {
+            builder.push(column.value(row, &mut buffer)?)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bcif::msgpack::MAX_DEPTH;
+    use crate::bcif::test_files::{category, column, encoded, file, sample, strings};
+    use crate::bcif::test_pack::{INT8, Pack, byte_array, i8_bytes, obj, text};
+    use crate::{BcifError, BcifLimits, BuildError, Document, Error, ValueKind};
+
+    fn texts(document: &Document, category: &str, item: &str) -> Vec<(String, ValueKind)> {
+        let block = document.block(0).unwrap();
+        let column = block.category(category).unwrap().column(item).unwrap();
+        column
+            .iter()
+            .map(|value| (value.raw().to_owned(), value.kind()))
+            .collect()
+    }
+
+    fn raws(document: &Document, category: &str, item: &str) -> Vec<String> {
+        texts(document, category, item)
+            .into_iter()
+            .map(|(raw, _)| raw)
+            .collect()
+    }
+
+    #[test]
+    fn builds_documents_with_pairs_loops_and_masks() {
+        let document = Document::from_bcif(&sample()).unwrap();
+        assert_eq!(document.len(), 1);
+        let block = document.block(0).unwrap();
+        assert_eq!(block.name(), "TEST");
+        assert_eq!(block.category_names(), ["entry", "atom_site"]);
+        assert_eq!(
+            texts(&document, "entry", "id"),
+            [("1ABC".into(), ValueKind::Bare)]
+        );
+        assert_eq!(block.category("atom_site").unwrap().row_count(), 4);
+        assert_eq!(raws(&document, "atom_site", "id"), ["1", "2", "3", "4"]);
+        assert_eq!(
+            texts(&document, "atom_site", "label_atom_id")[2..],
+            [
+                ("O5'".into(), ValueKind::Bare),
+                ("two words".into(), ValueKind::SingleQuoted)
+            ]
+        );
+        let kinds: Vec<_> = texts(&document, "atom_site", "label_alt_id")
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ValueKind::Inapplicable,
+                ValueKind::Inapplicable,
+                ValueKind::Bare,
+                ValueKind::Unknown
+            ]
+        );
+        assert_eq!(
+            raws(&document, "atom_site", "Cartn_x"),
+            ["12.345", "-0.500", "0.000", "0.007"]
+        );
+        assert_eq!(
+            raws(&document, "atom_site", "occupancy"),
+            ["1", "0.5", "0.25", "0.1"]
+        );
+        assert_eq!(
+            raws(&document, "atom_site", "B_iso_or_equiv"),
+            ["10.5", "0.1", "3", "0.0000001"]
+        );
+        assert_eq!(
+            raws(&document, "atom_site", "pdbx_formal_charge"),
+            ["0", "?", "-1", "1"]
+        );
+        let again = Document::parse(document.to_cif_string()).unwrap();
+        assert_eq!(again, document);
+    }
+
+    #[test]
+    fn every_truncation_and_byte_mutation_fails_cleanly() {
+        let bytes = sample();
+        for len in 0..bytes.len() {
+            assert!(Document::from_bcif(&bytes[..len]).is_err(), "prefix {len}");
+        }
+        let mut decoded = 0;
+        for position in 0..bytes.len() {
+            for replacement in [0x00, 0x7f, 0xc1, 0xcf, 0xdd, 0xff] {
+                let mut mutated = bytes.clone();
+                mutated[position] = replacement;
+                decoded += usize::from(Document::from_bcif(&mutated).is_ok());
+            }
+        }
+        assert!(decoded < bytes.len() * 6);
+    }
+
+    #[test]
+    fn rejects_invalid_masks_and_lengths() {
+        let data = || encoded(i8_bytes(&[1, 2]), vec![byte_array(INT8)]);
+        let bad_mask = file(
+            "x",
+            vec![category("_a", 2, vec![column("b", data(), Some(&[0, 3]))])],
+        );
+        assert_eq!(
+            Document::from_bcif(&bad_mask).unwrap_err(),
+            BcifError::InvalidMask(3)
+        );
+        let short_mask = file(
+            "x",
+            vec![category("_a", 2, vec![column("b", data(), Some(&[0]))])],
+        );
+        assert_eq!(
+            Document::from_bcif(&short_mask).unwrap_err(),
+            BcifError::LengthMismatch {
+                what: "mask",
+                expected: 2,
+                actual: 1
+            }
+        );
+        let ragged = file(
+            "x",
+            vec![category("_a", 3, vec![column("b", data(), None)])],
+        );
+        assert_eq!(
+            Document::from_bcif(&ragged).unwrap_err(),
+            BcifError::LengthMismatch {
+                what: "column data",
+                expected: 3,
+                actual: 2
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_text_that_cif_cannot_hold() {
+        let bytes = file(
+            "x",
+            vec![category(
+                "_a",
+                1,
+                vec![column("b", strings(&["x\n;y"]), None)],
+            )],
+        );
+        assert_eq!(
+            Document::from_bcif(&bytes).unwrap_err(),
+            BcifError::UnrepresentableValue { tag: "_a.b".into() }
+        );
+        let bytes = file("two words", Vec::new());
+        assert!(matches!(
+            Document::from_bcif(&bytes).unwrap_err(),
+            BcifError::Build(BuildError::InvalidBlockName(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_wrong_structure() {
+        assert_eq!(
+            Document::from_bcif(&obj([("version", text("1"))]).encode()).unwrap_err(),
+            BcifError::MissingField("dataBlocks")
+        );
+        assert!(matches!(
+            Document::from_bcif(&Pack::Array(Vec::new()).encode()).unwrap_err(),
+            BcifError::UnexpectedType { field: "file", .. }
+        ));
+        let header = obj([(
+            "dataBlocks",
+            Pack::Array(vec![obj([("header", Pack::Int(1))])]),
+        )]);
+        assert!(matches!(
+            Document::from_bcif(&header.encode()).unwrap_err(),
+            BcifError::UnexpectedType {
+                field: "header",
+                ..
+            }
+        ));
+        let mut nested = Pack::Nil;
+        for _ in 0..=MAX_DEPTH {
+            nested = Pack::Array(vec![nested]);
+        }
+        let deep = obj([("dataBlocks", nested)]).encode();
+        assert_eq!(
+            Document::from_bcif(&deep).unwrap_err(),
+            BcifError::TooDeep { limit: MAX_DEPTH }
+        );
+        assert!(matches!(
+            Document::from_bcif(&[0xdf, 0xff, 0xff, 0xff, 0xff]).unwrap_err(),
+            BcifError::Truncated { .. }
+        ));
+    }
+
+    #[test]
+    fn honours_custom_limits_and_reports_io_errors() {
+        let limits = BcifLimits { max_elements: 10 };
+        assert_eq!(
+            Document::from_bcif_with_limits(&sample(), limits).unwrap_err(),
+            BcifError::LimitExceeded { limit: 10 }
+        );
+        assert!(matches!(
+            Document::open_bcif("/nonexistent/file.bcif"),
+            Err(Error::Io(_))
+        ));
+    }
+}
