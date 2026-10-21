@@ -6,7 +6,6 @@ use crate::codec::Reader;
 use crate::component::Component;
 use crate::error::{CcdError, corrupt};
 use crate::format::{DIRECTORY_ENTRY_LEN, FORMAT_VERSION, MAGIC, MAX_ID_LEN, id_key, key_id};
-use crate::mapped::FileBytes;
 use crate::record::decode_record;
 
 const OUT_OF_BOUNDS: &str = "record offset is out of bounds";
@@ -57,21 +56,17 @@ fn validate_directory(directory: &[u8]) -> Result<(), CcdError> {
 }
 
 pub struct CcdIndex {
-    bytes: FileBytes,
+    bytes: Vec<u8>,
     layout: Layout,
 }
 
 impl CcdIndex {
     pub fn open(path: impl AsRef<Path>) -> Result<CcdIndex, CcdError> {
-        CcdIndex::from_file_bytes(FileBytes::map(path.as_ref())?)
+        CcdIndex::from_bytes(std::fs::read(path)?)
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<CcdIndex, CcdError> {
-        CcdIndex::from_file_bytes(FileBytes::Owned(bytes))
-    }
-
-    fn from_file_bytes(bytes: FileBytes) -> Result<CcdIndex, CcdError> {
-        let layout = Layout::read(bytes.as_slice())?;
+        let layout = Layout::read(&bytes)?;
         Ok(CcdIndex { bytes, layout })
     }
 
@@ -115,7 +110,7 @@ impl CcdIndex {
     }
 
     fn data(&self) -> &[u8] {
-        self.bytes.as_slice()
+        &self.bytes
     }
 
     fn entry(&self, index: usize) -> &[u8] {

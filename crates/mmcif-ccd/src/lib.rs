@@ -5,7 +5,6 @@ mod component;
 mod error;
 mod format;
 mod index;
-mod mapped;
 mod record;
 
 pub use build::{BuildSummary, IndexBuilder, build_index, build_index_from_file};

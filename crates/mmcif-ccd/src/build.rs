@@ -7,7 +7,6 @@ use crate::codec::{put_str, put_varint, varint_len};
 use crate::component::Component;
 use crate::error::CcdError;
 use crate::format::{DIRECTORY_ENTRY_LEN, FORMAT_VERSION, IdKey, MAGIC, id_key, key_id};
-use crate::mapped::FileBytes;
 use crate::record::encode_record;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,8 +151,8 @@ pub fn build_index_from_file(
     release: &str,
     out: impl Write,
 ) -> Result<BuildSummary, CcdError> {
-    let bytes = FileBytes::map(source.as_ref())?;
-    let text = std::str::from_utf8(bytes.as_slice())
+    let bytes = std::fs::read(source)?;
+    let text = std::str::from_utf8(&bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     build_index(text, release, out)
 }

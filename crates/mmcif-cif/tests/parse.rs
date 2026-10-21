@@ -172,12 +172,16 @@ fn stream_stops_after_an_error() {
 }
 
 #[test]
-fn opens_files_through_a_memory_map() {
+#[allow(unsafe_code)]
+fn opens_files_by_reading_or_mapping() {
     let path = std::env::temp_dir().join(format!("mmcif-cif-open-{}.cif", std::process::id()));
     std::fs::write(&path, SAMPLE).unwrap();
-    let document = Document::open(&path).unwrap();
+    let read = Document::open(&path).unwrap();
+    // SAFETY: the test owns the file and does not modify it while the document is alive.
+    let mapped = unsafe { Document::open_mapped(&path) }.unwrap();
     std::fs::remove_file(&path).unwrap();
-    assert_eq!(document, parse(SAMPLE));
+    assert_eq!(read, parse(SAMPLE));
+    assert_eq!(mapped, read);
 }
 
 #[test]

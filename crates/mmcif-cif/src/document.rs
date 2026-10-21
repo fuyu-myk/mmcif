@@ -1,9 +1,9 @@
 use std::fmt;
 use std::path::Path;
 
-use crate::error::{Error, ParseError, ParseErrorKind};
+use crate::error::{Error, ParseError};
 use crate::parse::Parser;
-use crate::source::Source;
+use crate::source::{MappedText, Source, read_text};
 use crate::value::{Value, ValueKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,26 +107,24 @@ impl Document {
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Document, ParseError> {
-        let text = String::from_utf8(bytes).map_err(|error| {
-            let offset = error.utf8_error().valid_up_to();
-            ParseError::at(error.as_bytes(), offset, ParseErrorKind::InvalidUtf8)
-        })?;
-        Document::parse(text)
+        Document::from_source(Source::Owned(read_text(bytes)?))
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Document, Error> {
-        Ok(Document::from_source(Source::map(path.as_ref())?)?)
+        let bytes = std::fs::read(path)?;
+        Ok(Document::from_bytes(bytes)?)
+    }
+
+    /// # Safety
+    /// The file must not be modified or truncated while the document is alive.
+    #[allow(unsafe_code)]
+    pub unsafe fn open_mapped(path: impl AsRef<Path>) -> Result<Document, Error> {
+        // SAFETY: forwarded from this function's contract.
+        let source = unsafe { MappedText::open(path.as_ref())? };
+        Ok(Document::from_source(source)?)
     }
 
     fn from_source(source: Source) -> Result<Document, ParseError> {
-        let bytes = source.bytes();
-        if let Err(error) = std::str::from_utf8(bytes) {
-            return Err(ParseError::at(
-                bytes,
-                error.valid_up_to(),
-                ParseErrorKind::InvalidUtf8,
-            ));
-        }
         let blocks = Parser::new(source.text())?.collect::<Result<Vec<_>, _>>()?;
         Ok(Document { source, blocks })
     }
