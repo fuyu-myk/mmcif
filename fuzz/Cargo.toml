@@ -35,3 +35,10 @@ path = "fuzz_targets/pdb_parse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bcif_decode"
+path = "fuzz_targets/bcif_decode.rs"
+test = false
+doc = false
+bench = false
