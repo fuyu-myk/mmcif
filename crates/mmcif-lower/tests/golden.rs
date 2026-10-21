@@ -21,9 +21,9 @@ fn emit(backend: Backend, yaml: &str) -> String {
     let checked = checked(yaml);
     match lower(backend, checked.source, design(&checked)) {
         Ok(text) => text,
-        Err(problems) => {
+        Err(refusal) => {
             let mut report = mmcif_spec::Report::new();
-            report.extend(problems);
+            report.extend(refusal.problems().iter().cloned());
             panic!("{}", checked.sources.render_all(&report));
         }
     }
@@ -33,9 +33,9 @@ fn refusal(backend: Backend, yaml: &str) -> String {
     let checked = checked(yaml);
     match lower(backend, checked.source, design(&checked)) {
         Ok(text) => panic!("expected a refusal, got:\n{text}"),
-        Err(problems) => {
+        Err(refusal) => {
             let mut report = mmcif_spec::Report::new();
-            report.extend(problems);
+            report.extend(refusal.problems().iter().cloned());
             checked.sources.render_all(&report)
         }
     }
@@ -85,9 +85,6 @@ fn rfd3_output_matches_its_golden_file() {
         - chain:
             id: A
             res_index: 4..5
-  - protein:
-      id: S
-      sequence: 10..14
 ";
     assert_eq!(emit(Backend::Rfd3, yaml), golden);
 }
@@ -170,7 +167,7 @@ fn rfd3_refuses_a_second_input_structure() {
 ",
     );
     assert!(
-        rendered.contains("rfd3 takes 1 input structure, not 2"),
+        rendered.contains("rfd3 takes one input structure, not 2"),
         "{rendered}"
     );
     assert!(rendered.contains("merge the chains into one structure file"));
@@ -222,4 +219,137 @@ fn every_backend_names_the_schema_it_was_written_against() {
         assert_ne!(schema, backend.name());
     }
     assert!(Backend::Rfd3.schema().contains("foundry"));
+}
+
+#[test]
+fn rfd3_refuses_a_gap_inside_a_chain() {
+    let rendered = refusal(
+        Backend::Rfd3,
+        "entities:\n  - file:\n      path: gapped.cif\n      include:\n        - chain:\n            id: A\n",
+    );
+    assert!(
+        rendered.contains("rfd3 cannot leave a gap inside chain A"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("chain A is missing residues 3 to 49"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn a_redesigned_gap_bridges_the_chain_for_rfd3() {
+    let emitted = emit(
+        Backend::Rfd3,
+        "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+      design:
+        - chain:
+            id: A
+            res_index: 3..4
+",
+    );
+    assert!(emitted.contains("\"contig\": \"A1-2,2,A5-6\""), "{emitted}");
+}
+
+#[test]
+fn one_file_named_by_two_entities_is_not_a_second_input() {
+    let emitted = emit(
+        Backend::Rfd3,
+        "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: B
+",
+    );
+    assert!(
+        emitted.contains("\"contig\": \"A1-6,/0,B1-2\""),
+        "{emitted}"
+    );
+    assert!(emitted.contains("\"input\": \"target.cif\""), "{emitted}");
+}
+
+#[test]
+fn label_numbering_is_emitted_where_the_author_numbering_differs() {
+    let yaml = "entities:
+  - file:
+      path: offset.cif
+      include:
+        - chain:
+            id: A
+      design:
+        - chain:
+            id: A
+            res_index: 2
+";
+    let boltzgen = emit(Backend::BoltzGen, yaml);
+    assert!(boltzgen.contains("res_index: 1..3"), "{boltzgen}");
+    assert!(boltzgen.contains("res_index: 2"), "{boltzgen}");
+    assert!(!boltzgen.contains("501"), "{boltzgen}");
+    let rfd3 = emit(Backend::Rfd3, yaml);
+    assert!(rfd3.contains("\"contig\": \"A1,1,A3\""), "{rfd3}");
+}
+
+#[test]
+fn an_unquoted_chain_id_cannot_break_the_output() {
+    let emitted = emit(
+        Backend::BoltzGen,
+        "entities:\n  - protein:\n      id: \"no\"\n      sequence: 8\n",
+    );
+    assert!(emitted.contains("id: \"no\""), "{emitted}");
+}
+
+#[test]
+fn a_construct_the_checker_only_warned_about_blocks_lowering() {
+    for backend in Backend::all() {
+        let rendered = refusal(
+            *backend,
+            "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+      binding_types:
+        - chain:
+            id: A
+            binding: 2..3
+  - protein:
+      id: S
+      sequence: 20
+",
+        );
+        assert!(
+            rendered.contains("error[unsupported-key]"),
+            "{} accepted a dropped section:\n{rendered}",
+            backend.name()
+        );
+        assert!(
+            rendered.contains(&format!(
+                "{} would be given a design without it",
+                backend.name()
+            )),
+            "{rendered}"
+        );
+    }
+}
+
+#[test]
+fn an_unsupported_entity_kind_blocks_lowering() {
+    let rendered = refusal(
+        Backend::BoltzGen,
+        "entities:\n  - protein:\n      id: S\n      sequence: 20\n  - dna:\n      id: D\n      sequence: ATGC\n",
+    );
+    assert!(rendered.contains("error[unsupported-entity]"), "{rendered}");
 }

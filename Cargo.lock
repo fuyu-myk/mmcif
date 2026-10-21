@@ -443,6 +443,7 @@ dependencies = [
  "mmcif-ir",
  "mmcif-model",
  "mmcif-spec",
+ "thiserror",
 ]
 
 [[package]]

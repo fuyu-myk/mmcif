@@ -4,15 +4,33 @@ mod boltzgen;
 mod capability;
 mod ranges;
 mod rfd3;
+mod slots;
+mod text;
 
 use mmcif_spec::{Design, Diagnostic, SourceId};
 
 pub use capability::Capabilities;
 
+const ALL: [Backend; 2] = [Backend::BoltzGen, Backend::Rfd3];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Backend {
     BoltzGen,
     Rfd3,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{} cannot express this specification", backend.name())]
+pub struct Refusal {
+    pub backend: Backend,
+    problems: Vec<Diagnostic>,
+}
+
+impl Refusal {
+    pub fn problems(&self) -> &[Diagnostic] {
+        &self.problems
+    }
 }
 
 impl Backend {
@@ -35,12 +53,12 @@ impl Backend {
         }
     }
 
-    pub fn names() -> [&'static str; 2] {
-        ["boltzgen", "rfd3"]
+    pub fn names() -> Vec<&'static str> {
+        ALL.iter().map(|backend| backend.name()).collect()
     }
 
-    pub fn all() -> [Backend; 2] {
-        [Backend::BoltzGen, Backend::Rfd3]
+    pub fn all() -> &'static [Backend] {
+        &ALL
     }
 
     pub fn schema(self) -> &'static str {
@@ -48,13 +66,10 @@ impl Backend {
     }
 }
 
-pub fn lower(
-    backend: Backend,
-    source: SourceId,
-    design: &Design,
-) -> Result<String, Vec<Diagnostic>> {
-    match backend {
+pub fn lower(backend: Backend, source: SourceId, design: &Design) -> Result<String, Refusal> {
+    let emitted = match backend {
         Backend::BoltzGen => boltzgen::emit(source, design),
         Backend::Rfd3 => rfd3::emit(source, design),
-    }
+    };
+    emitted.map_err(|problems| Refusal { backend, problems })
 }

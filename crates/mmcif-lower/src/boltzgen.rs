@@ -6,6 +6,7 @@ use mmcif_spec::{Design, Diagnostic, SegmentKind, SegmentSource, SourceId, Span,
 
 use crate::capability::{self, Capabilities};
 use crate::ranges;
+use crate::text;
 
 pub const CAPABILITIES: Capabilities = Capabilities {
     name: "boltzgen",
@@ -15,7 +16,7 @@ pub const CAPABILITIES: Capabilities = Capabilities {
     distances: false,
     secondary_structure: true,
     ligands: true,
-    inputs: usize::MAX,
+    inputs: None,
 };
 
 pub fn emit(source: SourceId, design: &Design) -> Result<String, Vec<Diagnostic>> {
@@ -88,10 +89,10 @@ fn structures(source: SourceId, design: &Design, problems: &mut Vec<Diagnostic>)
             ));
             continue;
         };
-        let addresses: Vec<SymbolicAddress> = match scope {
-            Scope::Address(address) => vec![address.clone()],
+        let addresses: &[SymbolicAddress] = match scope {
+            Scope::Address(address) => std::slice::from_ref(address),
             Scope::Group(id) => match design.spec.group(id) {
-                Ok(members) => members.to_vec(),
+                Ok(members) => members,
                 Err(error) => {
                     problems.push(refusal(source, span, error.to_string()));
                     continue;
@@ -107,10 +108,10 @@ fn structures(source: SourceId, design: &Design, problems: &mut Vec<Diagnostic>)
             }
         };
         for address in addresses {
-            let Some(label) = design.index_of(&address) else {
+            let Some(label) = design.index_of(address) else {
                 problems.push(refusal(
                     source,
-                    design.span_of(&address).unwrap_or(Span::new(0, 0)),
+                    design.span_of(address).unwrap_or(Span::new(0, 0)),
                     format!("{address} has no residue index"),
                 ));
                 continue;
@@ -149,14 +150,14 @@ fn file(
         return;
     };
     out.push_str("  - file:\n");
-    out.push_str(&format!("      path: {}\n", scalar(&path.declared)));
+    out.push_str(&format!("      path: {}\n", text::yaml(&path.declared)));
     out.push_str("      include:\n");
     for segment in group {
         chain(out, &segment.id, &labels(segment), "res_index");
     }
     let redesigned: Vec<(&SegmentSource, Vec<u32>)> = group
         .iter()
-        .map(|segment| (*segment, designed_labels(design, segment)))
+        .map(|segment| (*segment, crate::slots::redesigned(design, segment)))
         .filter(|(_, labels)| !labels.is_empty())
         .collect();
     if !redesigned.is_empty() {
@@ -167,14 +168,18 @@ fn file(
     }
     let mut lines = Vec::new();
     for segment in group {
-        let own: Vec<&(SegmentId, &'static str, Vec<u32>)> = structures
+        let mut own: Vec<&(SegmentId, &'static str, Vec<u32>)> = structures
             .iter()
             .filter(|(id, _, _)| id == &segment.id)
             .collect();
+        own.sort_by_key(|(_, key, _)| rank(key));
         if own.is_empty() {
             continue;
         }
-        let mut body = format!("        - chain:\n            id: {}\n", segment.id);
+        let mut body = format!(
+            "        - chain:\n            id: {}\n",
+            text::yaml(segment.id.as_str())
+        );
         for (_, key, labels) in own {
             body.push_str(&format!("            {key}: {}\n", ranges::write(labels)));
         }
@@ -189,31 +194,17 @@ fn file(
 }
 
 fn chain(out: &mut String, id: &SegmentId, labels: &[u32], key: &str) {
-    out.push_str(&format!("        - chain:\n            id: {id}\n"));
+    out.push_str(&format!(
+        "        - chain:\n            id: {}\n",
+        text::yaml(id.as_str())
+    ));
     if !labels.is_empty() {
         out.push_str(&format!("            {key}: {}\n", ranges::write(labels)));
     }
 }
 
 fn labels(segment: &SegmentSource) -> Vec<u32> {
-    let mut labels: Vec<u32> = segment.labels().collect();
-    labels.sort_unstable();
-    labels
-}
-
-fn designed_labels(design: &Design, segment: &SegmentSource) -> Vec<u32> {
-    let Ok(definition) = design.spec.segment(&segment.id) else {
-        return Vec::new();
-    };
-    let mut labels: Vec<u32> = definition
-        .elements()
-        .iter()
-        .enumerate()
-        .filter(|(_, element)| element.slot().geometry.anchor().is_none())
-        .filter_map(|(position, _)| segment.elements.get(position).and_then(|info| info.label))
-        .collect();
-    labels.sort_unstable();
-    labels
+    segment.labels().collect()
 }
 
 fn protein(
@@ -240,8 +231,8 @@ fn protein(
     }
     out.push_str(&format!(
         "  - protein:\n      id: {}\n      sequence: {}\n",
-        segment.id,
-        scalar(&sequence)
+        text::yaml(segment.id.as_str()),
+        text::yaml(&sequence)
     ));
 }
 
@@ -286,8 +277,9 @@ fn ligand(
         .and_then(component);
     match comp {
         Some(comp) => out.push_str(&format!(
-            "  - ligand:\n      id: {}\n      ccd: {comp}\n",
-            segment.id
+            "  - ligand:\n      id: {}\n      ccd: {}\n",
+            text::yaml(segment.id.as_str()),
+            text::yaml(&comp)
         )),
         None => problems.push(refusal(
             source,
@@ -345,7 +337,18 @@ fn constraints(
 
 fn atom(design: &Design, address: &SymbolicAddress, name: &str) -> Option<String> {
     let index = design.index_of(address)?;
-    Some(format!("[{}, {index}, {name}]", address.segment))
+    Some(format!(
+        "[{}, {index}, {}]",
+        text::yaml_flow(address.segment.as_str()),
+        text::yaml_flow(name)
+    ))
+}
+
+fn rank(key: &str) -> usize {
+    ["loop", "helix", "sheet"]
+        .iter()
+        .position(|known| *known == key)
+        .unwrap_or(usize::MAX)
 }
 
 fn structure_key(kind: SecondaryStructure) -> Option<&'static str> {
@@ -354,20 +357,6 @@ fn structure_key(kind: SecondaryStructure) -> Option<&'static str> {
         SecondaryStructure::Strand => Some("sheet"),
         SecondaryStructure::Loop => Some("loop"),
         _ => None,
-    }
-}
-
-fn scalar(text: &str) -> String {
-    let plain = !text.is_empty()
-        && !text.starts_with([
-            '#', '-', '?', ':', '&', '*', '!', '|', '>', '%', '@', '`', '"', '\'',
-        ])
-        && !text.contains(": ")
-        && !text.contains(" #")
-        && text.trim() == text;
-    match plain {
-        true => text.to_string(),
-        false => format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")),
     }
 }
 

@@ -1,5 +1,5 @@
 use mmcif_ir::{Constraint, Geometry, Identity, Slot, Spec};
-use mmcif_spec::{Design, Diagnostic, SegmentKind, SourceId, Span};
+use mmcif_spec::{Design, Diagnostic, SegmentKind, Severity, SourceId, Span};
 
 #[non_exhaustive]
 pub struct Capabilities {
@@ -10,7 +10,7 @@ pub struct Capabilities {
     pub distances: bool,
     pub secondary_structure: bool,
     pub ligands: bool,
-    pub inputs: usize,
+    pub inputs: Option<usize>,
 }
 
 pub fn unsupported(
@@ -19,7 +19,15 @@ pub fn unsupported(
     capabilities: &Capabilities,
 ) -> Vec<Diagnostic> {
     let name = capabilities.name;
-    let mut gaps = Vec::new();
+    let mut gaps: Vec<Diagnostic> = design
+        .skipped()
+        .iter()
+        .map(|skipped| Diagnostic {
+            severity: Severity::Error,
+            help: Some(format!("{name} would be given a design without it")),
+            ..skipped.clone()
+        })
+        .collect();
     for segment in &design.segments {
         let Ok(definition) = design.spec.segment(&segment.id) else {
             continue;
@@ -71,7 +79,9 @@ pub fn unsupported(
             Constraint::SecondaryStructure { .. } if !capabilities.secondary_structure => {
                 Some("secondary structure")
             }
-            _ => None,
+            Constraint::Bond { .. } | Constraint::Distance { .. } => None,
+            Constraint::SecondaryStructure { .. } => None,
+            _ => Some("this"),
         };
         if let Some(what) = gap {
             gaps.push(refusal(
@@ -82,17 +92,30 @@ pub fn unsupported(
             ));
         }
     }
-    if design.targets.len() > capabilities.inputs {
+    let mut distinct: Vec<&std::path::Path> = design
+        .targets
+        .iter()
+        .map(|target| target.resolved.as_path())
+        .collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if capabilities
+        .inputs
+        .is_some_and(|allowed| distinct.len() > allowed)
+    {
+        let allowed = capabilities.inputs.unwrap_or_default();
         let span = second_target(design).unwrap_or(Span::new(0, 0));
         gaps.push(
             refusal(
                 source,
                 span,
-                format!(
-                    "{name} takes {} input structure, not {}",
-                    capabilities.inputs,
-                    design.targets.len()
-                ),
+                match allowed {
+                    1 => format!("{name} takes one input structure, not {}", distinct.len()),
+                    allowed => format!(
+                        "{name} takes {allowed} input structures, not {}",
+                        distinct.len()
+                    ),
+                },
                 "this file would be ignored",
             )
             .help("merge the chains into one structure file"),
@@ -109,7 +132,7 @@ fn second_target(design: &Design) -> Option<Span> {
     design
         .segments
         .iter()
-        .find(|segment| segment.target() > Some(0))
+        .find(|segment| segment.target().is_some_and(|index| index > 0))
         .map(|segment| segment.span)
 }
 

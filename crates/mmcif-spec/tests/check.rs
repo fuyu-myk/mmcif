@@ -623,3 +623,50 @@ fn a_specification_with_too_many_constrained_atoms_says_so() {
     assert_eq!(checked.report.codes(), ["geometry-not-checked"]);
     assert!(!checked.has_errors());
 }
+
+#[test]
+fn secondary_structure_cannot_name_a_chain_from_another_entity() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "  - file:\n",
+        "      path: other.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: C\n",
+        "      secondary_structure:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "            helix: 1..2\n",
+    ));
+    assert_eq!(checked.report.codes(), ["unknown-chain"]);
+    assert!(checked.render().contains("chain A is not included"));
+}
+
+#[test]
+fn a_redesigned_chain_without_an_index_is_redesigned_whole() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: B\n",
+        "      design:\n",
+        "        - chain:\n",
+        "            id: B\n",
+    ));
+    assert!(checked.report.is_empty(), "{}", checked.render());
+    let shortest = checked.shortest.unwrap();
+    assert_eq!(shortest.slot_count(), 2);
+    for slot in 0..2 {
+        assert_eq!(
+            shortest.determinacy(SlotIndex::new(slot)).unwrap().corner(),
+            Some(Corner::DeNovo)
+        );
+    }
+}

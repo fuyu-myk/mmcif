@@ -87,7 +87,16 @@ fn emit(path: &str, backend: Backend) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let rendered = checked.render();
+    let mut carried = Report::new();
+    carried.extend(
+        checked
+            .report
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| !diagnostic.code.starts_with("unsupported-"))
+            .cloned(),
+    );
+    let rendered = checked.sources.render_all(&carried);
     if !rendered.is_empty() {
         eprint!("{rendered}");
     }
@@ -96,21 +105,28 @@ fn emit(path: &str, backend: Backend) -> ExitCode {
         return ExitCode::FAILURE;
     };
     match lower(backend, checked.source, design) {
-        Ok(text) => {
-            print!("{text}");
-            ExitCode::SUCCESS
-        }
-        Err(problems) => {
+        Ok(text) => match write(&text) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("mmcif: {error}");
+                ExitCode::from(2)
+            }
+        },
+        Err(refusal) => {
             let mut report = Report::new();
-            report.extend(problems);
+            report.extend(refusal.problems().iter().cloned());
             eprint!("{}", checked.sources.render_all(&report));
-            eprintln!(
-                "mmcif: {} cannot express this specification",
-                backend.name()
-            );
+            eprintln!("mmcif: {refusal}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn write(text: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    out.write_all(text.as_bytes())?;
+    out.flush()
 }
 
 fn report(checked: &Checked) -> ExitCode {

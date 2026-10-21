@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use mmcif_ir::{Corner, SlotIndex, Spec};
+use mmcif_ir::{Constraint, Corner, SecondaryStructure, SlotIndex};
 use mmcif_lower::{Backend, lower};
 use mmcif_spec::{Checked, check_text};
 
@@ -19,35 +19,65 @@ fn emitted(yaml: &str) -> String {
     let design = checked.design.as_ref().expect("the spec lowered");
     match lower(Backend::BoltzGen, checked.source, design) {
         Ok(text) => text,
-        Err(problems) => {
+        Err(refusal) => {
             let mut report = mmcif_spec::Report::new();
-            report.extend(problems);
+            report.extend(refusal.problems().iter().cloned());
             panic!("{}", checked.sources.render_all(&report));
         }
     }
 }
 
-fn spec_of(yaml: &str) -> Spec {
-    checked(yaml).design.expect("the spec lowered").spec
+#[derive(Debug, PartialEq)]
+struct Semantics {
+    slots: usize,
+    corners: Vec<Option<Corner>>,
+    structure: Vec<Option<SecondaryStructure>>,
+    bonds: Vec<String>,
 }
 
-fn corners(yaml: &str) -> Vec<Option<Corner>> {
+fn semantics(yaml: &str) -> Semantics {
     let checked = checked(yaml);
     let shortest = checked.shortest.expect("the spec instantiates");
-    (0..shortest.slot_count() as u32)
-        .map(|slot| {
-            shortest
-                .determinacy(SlotIndex::new(slot))
-                .expect("every slot has a determinacy")
-                .corner()
-        })
-        .collect()
+    let slots = shortest.slot_count();
+    let mut structure = vec![None; slots];
+    let mut bonds = Vec::new();
+    for constraint in shortest.constraints() {
+        match constraint {
+            Constraint::SecondaryStructure { scope, kind } => {
+                for slot in scope {
+                    structure[slot.as_usize()] = Some(*kind);
+                }
+            }
+            Constraint::Bond { first, second } => {
+                let mut ends = [
+                    format!("{} {}", first.slot.get(), first.atom),
+                    format!("{} {}", second.slot.get(), second.atom),
+                ];
+                ends.sort();
+                bonds.push(ends.join(" to "));
+            }
+            _ => bonds.push(format!("{constraint:?}")),
+        }
+    }
+    bonds.sort();
+    Semantics {
+        slots,
+        corners: (0..slots as u32)
+            .map(|slot| {
+                shortest
+                    .determinacy(SlotIndex::new(slot))
+                    .expect("every slot has a determinacy")
+                    .corner()
+            })
+            .collect(),
+        structure,
+        bonds,
+    }
 }
 
 fn round_trip(yaml: &str) {
     let once = emitted(yaml);
-    assert_eq!(spec_of(yaml), spec_of(&once), "specs differ\n{once}");
-    assert_eq!(corners(yaml), corners(&once), "determinacy differs\n{once}");
+    assert_eq!(semantics(yaml), semantics(&once), "meaning differs\n{once}");
     assert_eq!(once, emitted(&once), "a second pass changed the output");
 }
 
@@ -128,7 +158,7 @@ fn a_whole_file_include_becomes_explicit_without_changing_meaning() {
     let once = emitted(yaml);
     assert!(once.contains("res_index: 1..6"), "{once}");
     assert!(once.contains("res_index: 1..2"), "{once}");
-    assert_eq!(spec_of(yaml), spec_of(&once));
+    assert_eq!(semantics(yaml), semantics(&once));
 }
 
 #[test]
@@ -199,4 +229,61 @@ constraints:
       atom2: [Q, 1, CH]
 ",
     );
+}
+
+#[test]
+fn secondary_structure_listed_out_of_order_keeps_its_meaning() {
+    round_trip(
+        "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: A
+        - chain:
+            id: B
+      design:
+        - chain:
+            id: A
+      secondary_structure:
+        - chain:
+            id: B
+            helix: 1..2
+        - chain:
+            id: A
+            helix: 5..6
+        - chain:
+            id: A
+            helix: 1..2
+        - chain:
+            id: A
+            loop: 3
+",
+    );
+}
+
+#[test]
+fn a_redesigned_chain_without_an_index_covers_the_whole_chain() {
+    let yaml = "entities:
+  - file:
+      path: target.cif
+      include:
+        - chain:
+            id: B
+      design:
+        - chain:
+            id: B
+";
+    let once = emitted(yaml);
+    assert!(once.contains("design:"), "{once}");
+    assert!(once.contains("res_index: 1..2"), "{once}");
+    round_trip(yaml);
+    let checked = checked(yaml);
+    let shortest = checked.shortest.unwrap();
+    for slot in 0..shortest.slot_count() as u32 {
+        assert_eq!(
+            shortest.determinacy(SlotIndex::new(slot)).unwrap().corner(),
+            Some(Corner::DeNovo)
+        );
+    }
 }

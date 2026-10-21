@@ -81,11 +81,19 @@ pub fn check_text(name: impl Into<String>, text: &str, base: &Path) -> Checked {
     let document = read::document(source, &root, &mut report);
     let lowered = lower::lower(source, base, &document, &mut report);
     let shortest = check::check(source, &lowered, &mut report);
+    let mut design = lowered.design();
+    design.note_skipped(
+        report
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.starts_with("unsupported-"))
+            .cloned(),
+    );
     Checked {
         sources,
         report,
         source,
-        design: Some(lowered.design()),
+        design: Some(design),
         shortest,
     }
 }

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use mmcif_ir::{ElementIndex, SegmentId, Spec, SymbolicAddress};
 
+use crate::diagnostic::Diagnostic;
 use crate::lower::{Addressing, Lowered};
 use crate::span::Span;
 
@@ -33,7 +34,6 @@ pub struct SegmentSource {
     pub id: SegmentId,
     pub kind: SegmentKind,
     pub span: Span,
-    pub addressing: Addressing,
     pub elements: Vec<ElementSource>,
 }
 
@@ -61,11 +61,24 @@ pub struct TargetPath {
 pub struct Design {
     pub spec: Spec,
     pub segments: Vec<SegmentSource>,
-    pub constraint_spans: Vec<Span>,
     pub targets: Vec<TargetPath>,
+    constraint_spans: Vec<Span>,
+    skipped: Vec<Diagnostic>,
 }
 
 impl Design {
+    pub fn skipped(&self) -> &[Diagnostic] {
+        &self.skipped
+    }
+
+    pub fn note_skipped(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
+        self.skipped.extend(diagnostics);
+    }
+
+    pub fn target_of(&self, segment: &SegmentSource) -> Option<&TargetPath> {
+        self.targets.get(segment.target()?)
+    }
+
     pub fn segment(&self, id: &SegmentId) -> Option<&SegmentSource> {
         self.segments.iter().find(|segment| &segment.id == id)
     }
@@ -84,7 +97,7 @@ impl Design {
 
     pub fn index_of(&self, address: &SymbolicAddress) -> Option<u32> {
         let segment = self.segment(&address.segment)?;
-        match segment.addressing {
+        match segment.kind.addressing() {
             Addressing::Label => segment.element(address.element)?.label,
             Addressing::Positional => {
                 let definition = self.spec.segment(&address.segment).ok()?;
@@ -105,26 +118,7 @@ impl Lowered {
     pub fn design(self) -> Design {
         Design {
             spec: self.spec,
-            segments: self
-                .segments
-                .into_iter()
-                .map(|segment| SegmentSource {
-                    id: segment.id,
-                    kind: segment.kind,
-                    span: segment.span,
-                    addressing: segment.addressing,
-                    elements: segment
-                        .elements
-                        .into_iter()
-                        .map(|element| ElementSource {
-                            span: element.span,
-                            label: element.label,
-                            target: element.target,
-                        })
-                        .collect(),
-                })
-                .collect(),
-            constraint_spans: self.constraint_spans,
+            segments: self.segments,
             targets: self
                 .targets
                 .into_iter()
@@ -133,6 +127,8 @@ impl Lowered {
                     resolved: target.path,
                 })
                 .collect(),
+            constraint_spans: self.constraint_spans,
+            skipped: Vec::new(),
         }
     }
 }

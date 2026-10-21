@@ -11,11 +11,11 @@ categories = ["science::computational-biology::structural-modeling"]
 
 [dependencies]
 mmcif-ir.workspace = true
-mmcif-model.workspace = true
 mmcif-spec.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-mmcif-ir.workspace = true
+mmcif-model.workspace = true
 
 [lints]
 workspace = true

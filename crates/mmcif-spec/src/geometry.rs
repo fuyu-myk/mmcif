@@ -398,7 +398,7 @@ fn reach(
         return None;
     }
     let segment = lowered.segments.get(left.segment.as_usize())?;
-    let steps = match segment.addressing {
+    let steps = match segment.kind.addressing() {
         Addressing::Label => {
             let from = segment.elements.get(left.element.as_usize())?.label?;
             let to = segment.elements.get(right.element.as_usize())?.label?;

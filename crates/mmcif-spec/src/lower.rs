@@ -6,7 +6,7 @@ use mmcif_ir::{
 };
 use mmcif_model::AtomName;
 
-use crate::design::SegmentKind;
+use crate::design::{ElementSource, SegmentKind, SegmentSource};
 use crate::diagnostic::{Diagnostic, Report};
 use crate::document::{
     AtomRef, Document, Entity, EntityKind, FileEntity, Protein, Ranges, Selection, Spanned,
@@ -22,65 +22,47 @@ pub enum Addressing {
     Label,
 }
 
-#[derive(Debug, Clone)]
-pub struct ElementInfo {
-    pub span: Span,
-    pub label: Option<u32>,
-    pub target: Option<usize>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SegmentInfo {
-    pub id: SegmentId,
-    pub kind: SegmentKind,
-    pub span: Span,
-    pub addressing: Addressing,
-    pub elements: Vec<ElementInfo>,
-}
-
-impl SegmentInfo {
-    fn locate(&self, index: u32, spec: &Spec) -> Option<(ElementIndex, u32)> {
-        match self.addressing {
-            Addressing::Label => self
-                .elements
-                .iter()
-                .position(|element| element.label == Some(index))
-                .map(|element| (ElementIndex::new(element as u32), 0)),
-            Addressing::Positional => {
-                let segment = spec.segment(&self.id).ok()?;
-                let index = u64::from(index);
-                let mut seen = 0u64;
-                for (position, element) in segment.elements().iter().enumerate() {
-                    let count = u64::from(element.length().min());
-                    if index <= seen + count {
-                        return Some((
-                            ElementIndex::new(position as u32),
-                            (index - seen - 1) as u32,
-                        ));
-                    }
-                    seen += count;
+fn locate(segment: &SegmentSource, index: u32, spec: &Spec) -> Option<(ElementIndex, u32)> {
+    match segment.kind.addressing() {
+        Addressing::Label => segment
+            .elements
+            .iter()
+            .position(|element| element.label == Some(index))
+            .map(|element| (ElementIndex::new(element as u32), 0)),
+        Addressing::Positional => {
+            let definition = spec.segment(&segment.id).ok()?;
+            let index = u64::from(index);
+            let mut seen = 0u64;
+            for (position, element) in definition.elements().iter().enumerate() {
+                let count = u64::from(element.length().min());
+                if index <= seen + count {
+                    return Some((
+                        ElementIndex::new(position as u32),
+                        (index - seen - 1) as u32,
+                    ));
                 }
-                None
+                seen += count;
             }
+            None
         }
     }
+}
 
-    fn minimum(&self, spec: &Spec) -> u32 {
-        spec.segment(&self.id)
-            .map(|segment| segment.length_bounds().0.min(u64::from(u32::MAX)) as u32)
-            .unwrap_or(0)
-    }
+fn minimum(segment: &SegmentSource, spec: &Spec) -> u32 {
+    spec.segment(&segment.id)
+        .map(|definition| definition.length_bounds().0.min(u64::from(u32::MAX)) as u32)
+        .unwrap_or(0)
 }
 
 pub struct Lowered {
     pub spec: Spec,
-    pub segments: Vec<SegmentInfo>,
+    pub segments: Vec<SegmentSource>,
     pub constraint_spans: Vec<Span>,
     pub targets: Vec<Target>,
 }
 
 impl Lowered {
-    pub fn segment(&self, id: &str) -> Option<&SegmentInfo> {
+    pub fn segment(&self, id: &str) -> Option<&SegmentSource> {
         self.segments
             .iter()
             .find(|segment| segment.id.as_str() == id)
@@ -113,7 +95,7 @@ pub fn lower(source: SourceId, base: &Path, document: &Document, report: &mut Re
                     SegmentKind::Ligand,
                     vec![(
                         Element::Slot(slot),
-                        ElementInfo {
+                        ElementSource {
                             span: ligand.ccd.span,
                             label: None,
                             target: None,
@@ -147,7 +129,7 @@ fn designed(
 ) {
     let mut elements = Vec::new();
     for piece in &protein.sequence.value {
-        let info = ElementInfo {
+        let info = ElementSource {
             span: piece.span,
             label: None,
             target: None,
@@ -189,6 +171,7 @@ fn from_file(
         return;
     };
     let index = lowered.targets.len();
+    let own = lowered.segments.len();
     let target = &loaded;
 
     let whole = match file.include.is_empty() {
@@ -228,7 +211,7 @@ fn from_file(
             report,
         );
         let designed = design_ranges(file, &selection.chain.value);
-        let elements: Vec<(Element, ElementInfo)> = residues
+        let elements: Vec<(Element, ElementSource)> = residues
             .iter()
             .map(|residue| {
                 let anchored = !designed
@@ -242,7 +225,7 @@ fn from_file(
                 };
                 (
                     Element::Slot(slot),
-                    ElementInfo {
+                    ElementSource {
                         span: selection.span,
                         label: Some(residue.seq.get()),
                         target: Some(index),
@@ -263,7 +246,7 @@ fn from_file(
     }
     lowered.targets.push(loaded);
     for selection in &file.structure {
-        structure(source, lowered, selection, report, groups);
+        structure(source, lowered, selection, own, report, groups);
     }
 }
 
@@ -282,11 +265,14 @@ fn every_chain(target: &Target, span: Span) -> Vec<Selection> {
         .collect()
 }
 
-fn design_ranges<'a>(file: &'a FileEntity, chain: &str) -> Vec<&'a Ranges> {
+fn design_ranges(file: &FileEntity, chain: &str) -> Vec<Ranges> {
     file.design
         .iter()
         .filter(|selection| selection.chain.value == chain)
-        .filter_map(|selection| selection.residues.as_ref().map(|ranges| &ranges.value))
+        .map(|selection| match &selection.residues {
+            Some(ranges) => ranges.value.clone(),
+            None => Ranges::All,
+        })
         .collect()
 }
 
@@ -302,19 +288,20 @@ fn check_design(
         .iter()
         .filter(|selection| selection.chain.value == chain)
     {
-        let Some(ranges) = &selection.residues else {
-            continue;
+        let (ranges, span) = match &selection.residues {
+            Some(ranges) => (ranges.value.clone(), ranges.span),
+            None => (Ranges::All, selection.chain.span),
         };
         if !residues
             .iter()
-            .any(|residue| ranges.value.contains(residue.seq.get()))
+            .any(|residue| ranges.contains(residue.seq.get()))
         {
             report.push(
                 Diagnostic::error(
                     "design-outside-selection",
                     format!("no selected residue of chain {chain} is redesigned"),
                 )
-                .at(source, ranges.span, "none of these residues are included")
+                .at(source, span, "none of these residues are included")
                 .help("every redesigned residue must also be included"),
             );
         }
@@ -325,6 +312,7 @@ fn structure(
     source: SourceId,
     lowered: &mut Lowered,
     selection: &StructureSelection,
+    own: usize,
     report: &mut Report,
     groups: &mut usize,
 ) {
@@ -335,6 +323,8 @@ fn structure(
         ..
     } = lowered;
     let Some(segment) = segments
+        .get(own..)
+        .unwrap_or_default()
         .iter()
         .find(|segment| segment.id.as_str() == selection.chain.value)
     else {
@@ -412,7 +402,7 @@ fn push(
     id: &Spanned<String>,
     span: Span,
     kind: SegmentKind,
-    elements: Vec<(Element, ElementInfo)>,
+    elements: Vec<(Element, ElementSource)>,
     report: &mut Report,
 ) {
     if elements.is_empty() {
@@ -430,16 +420,15 @@ fn push(
         return;
     }
     let segment = SegmentId::new(id.value.as_str());
-    let (definitions, infos): (Vec<Element>, Vec<ElementInfo>) = elements.into_iter().unzip();
+    let (definitions, infos): (Vec<Element>, Vec<ElementSource>) = elements.into_iter().unzip();
     match lowered
         .spec
         .push_segment(Segment::new(segment.clone(), definitions))
     {
-        Ok(_) => lowered.segments.push(SegmentInfo {
+        Ok(_) => lowered.segments.push(SegmentSource {
             id: segment,
             kind,
             span,
-            addressing: kind.addressing(),
             elements: infos,
         }),
         Err(error) => report.push(ir_error(source, id.span, error)),
@@ -483,14 +472,14 @@ fn address(
         );
         return None;
     };
-    match segment.locate(atom.index.value, &lowered.spec) {
+    match locate(segment, atom.index.value, &lowered.spec) {
         Some((element, offset)) => Some(SymbolicAddress::at(segment.id.clone(), element, offset)),
         None => {
-            let help = match segment.addressing {
+            let help = match segment.kind.addressing() {
                 Addressing::Positional => format!(
                     "chain {} holds {} residues at its shortest length",
                     segment.id,
-                    segment.minimum(&lowered.spec)
+                    minimum(segment, &lowered.spec)
                 ),
                 Addressing::Label => {
                     let labels: Vec<u32> = segment
