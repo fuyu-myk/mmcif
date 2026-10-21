@@ -122,6 +122,10 @@ pub enum SecondaryStructure {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Constraint<A: Addressing> {
+    Bond {
+        first: AtomAddress<A::One>,
+        second: AtomAddress<A::One>,
+    },
     Distance {
         first: AtomAddress<A::One>,
         second: AtomAddress<A::One>,
@@ -136,6 +140,7 @@ pub enum Constraint<A: Addressing> {
 impl Constraint<Resolved> {
     pub fn slots(&self) -> Vec<SlotIndex> {
         match self {
+            Constraint::Bond { first, second } => vec![first.slot, second.slot],
             Constraint::Distance { first, second, .. } => vec![first.slot, second.slot],
             Constraint::SecondaryStructure { scope, .. } => scope.clone(),
         }

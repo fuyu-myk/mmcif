@@ -282,6 +282,16 @@ fn resolve_constraint(
     constraint: &Constraint<crate::constraint::Symbolic>,
 ) -> Result<Constraint<Resolved>, IrError> {
     match constraint {
+        Constraint::Bond { first, second } => Ok(Constraint::Bond {
+            first: AtomAddress::new(
+                resolve_one(spec, element_slots, &first.slot)?,
+                first.atom.clone(),
+            ),
+            second: AtomAddress::new(
+                resolve_one(spec, element_slots, &second.slot)?,
+                second.atom.clone(),
+            ),
+        }),
         Constraint::Distance {
             first,
             second,

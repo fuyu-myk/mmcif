@@ -592,3 +592,74 @@ fn a_group_naming_the_same_slots_twice_resolves_them_once() {
         other => panic!("expected a secondary structure constraint, got {other:?}"),
     }
 }
+
+#[test]
+fn a_bond_resolves_and_constrains_like_a_distance_without_bounds() {
+    let mut spec = Spec::new();
+    let cysteine = Slot::new(Identity::Exactly(comp("CYS")), Geometry::Free);
+    spec.push_segment(Segment::new(
+        SegmentId::new("peptide"),
+        [
+            Element::run(Slot::de_novo(), Length::range(10, 14).unwrap()),
+            Element::Slot(cysteine.clone()),
+            Element::run(Slot::de_novo(), Length::exact(6).unwrap()),
+            Element::Slot(cysteine),
+        ],
+    ))
+    .unwrap();
+    spec.push_constraint(Constraint::<Symbolic>::Bond {
+        first: AtomAddress::new(address("peptide", 1), AtomName::new("SG")),
+        second: AtomAddress::new(address("peptide", 3), AtomName::new("SG")),
+    })
+    .unwrap();
+
+    let bonded = spec.determinacy(&address("peptide", 1)).unwrap();
+    assert_eq!(
+        (bonded.identity, bonded.geometry),
+        (Level::Fixed, Level::Restricted)
+    );
+    assert!(bonded.is_partial() && bonded.corner().is_none());
+    assert_eq!(
+        spec.determinacy(&address("peptide", 0)).unwrap().corner(),
+        Some(Corner::DeNovo)
+    );
+
+    let instantiated = spec.instantiate(&Lengths::minimum(&spec)).unwrap();
+    match &instantiated.constraints()[0] {
+        Constraint::Bond { first, second } => {
+            assert_eq!(
+                (first.slot, second.slot),
+                (SlotIndex::new(10), SlotIndex::new(17))
+            );
+            assert_eq!(first.atom, AtomName::new("SG"));
+            assert_eq!(
+                instantiated.constraints()[0].slots(),
+                [SlotIndex::new(10), SlotIndex::new(17)]
+            );
+        }
+        other => panic!("expected a bond, got {other:?}"),
+    }
+    assert!(instantiated.is_constrained(SlotIndex::new(10)).unwrap());
+    assert!(!instantiated.is_constrained(SlotIndex::new(9)).unwrap());
+}
+
+#[test]
+fn a_bond_over_a_run_is_refused_like_any_plural_address() {
+    let mut spec = Spec::new();
+    spec.push_segment(Segment::new(
+        SegmentId::new("peptide"),
+        [Element::run(Slot::de_novo(), Length::exact(4).unwrap())],
+    ))
+    .unwrap();
+    assert_eq!(
+        spec.push_constraint(Constraint::<Symbolic>::Bond {
+            first: AtomAddress::new(address("peptide", 0), AtomName::new("SG")),
+            second: AtomAddress::new(at("peptide", 0, 2), AtomName::new("SG")),
+        }),
+        Err(IrError::AddressNotSingular {
+            segment: SegmentId::new("peptide"),
+            element: mmcif_ir::ElementIndex::new(0),
+            slots: 4,
+        })
+    );
+}

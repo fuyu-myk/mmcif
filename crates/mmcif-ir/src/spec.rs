@@ -44,7 +44,7 @@ impl Spec {
 
     pub fn push_constraint(&mut self, constraint: Constraint<Symbolic>) -> Result<(), IrError> {
         match &constraint {
-            Constraint::Distance { first, second, .. } => {
+            Constraint::Bond { first, second } | Constraint::Distance { first, second, .. } => {
                 for address in [&first.slot, &second.slot] {
                     self.check_address(address)?;
                     self.check_singular(address)?;
@@ -169,7 +169,8 @@ impl Spec {
         let mut found = Vec::new();
         for constraint in &self.constraints {
             match constraint {
-                Constraint::Distance { first, second, .. } => {
+                Constraint::Bond { first, second }
+                | Constraint::Distance { first, second, .. } => {
                     found.push(&first.slot);
                     found.push(&second.slot);
                 }
