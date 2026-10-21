@@ -1,0 +1,24 @@
+HEADER    HYDROLASE                               01-JAN-00   1ABC              
+MODEL        1
+ATOM      1  N   GLY A   1       1.000   2.000   3.000  1.00 10.00           N  
+ATOM      2  CA  GLY A   1       2.000   2.000   3.000  1.00 10.00           C  
+ATOM      3  N  ASER A   2       3.000   2.000   3.000  0.60 10.00           N  
+ATOM      4  N  BSER A   2       3.100   2.000   3.000  0.40 10.00           N  
+ATOM      5  N   ALA A   2A      4.000   2.000   3.000  1.00 10.00           N  
+HETATM    6  N   MSE A   3       5.000   2.000   3.000  1.00 10.00           N  
+HETATM    7  SE  MSE A   3       5.000   3.000   3.000  1.00 10.00          SE  
+ATOM      8  N   LYS A   4       6.000   2.000   3.000  1.00 10.00           N  
+TER       9      LYS A   4
+HETATM   10  ZN   ZN A 101       0.000   0.000   5.000  1.00 30.00          ZN2+
+HETATM   11  C1  NAG A 102       9.000   0.000   0.000  1.00 30.00           C  
+HETATM   12  O   HOH A 201       7.000   7.000   7.000  1.00 40.00           O  
+HETATM   13  O   HOH A 202       8.000   8.000   8.000  1.00 40.00           O  
+ATOM     14  N   GLY B   1      11.000   2.000   3.000  1.00 10.00              
+ATOM     15  CA  GLY B   1      12.000   2.000   3.000  1.00 10.00              
+TER      16      GLY B   1
+HETATM   17  O   HOH B 301       9.000   9.000   9.000  1.00 40.00           O  
+ENDMDL
+MODEL        2
+ATOM      1  N   GLY A   1       1.500   2.000   3.000  1.00 10.00           N  
+ENDMDL
+END
