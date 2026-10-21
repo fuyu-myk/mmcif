@@ -44,7 +44,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         type=float,
         default=DEFAULT_TIME_THRESHOLD_PERCENT,
         metavar="PERCENT",
-        help="largest allowed mean slowdown (default %(default)s)",
+        help="fail when the 95%% confidence lower bound of the slowdown exceeds this (default %(default)s)",
     )
     parser.add_argument(
         "--memory-threshold",
@@ -65,6 +65,10 @@ def load_json(path: Path) -> dict:
 
 def mean_estimate(path: Path) -> float:
     return load_json(path)["mean"]["point_estimate"]
+
+
+def change_lower_bound(path: Path) -> float:
+    return load_json(path)["mean"]["confidence_interval"]["lower_bound"]
 
 
 def bench_dirs(criterion_dir: Path, baseline: str) -> list[Path]:
@@ -124,7 +128,7 @@ def time_row(bench_dir: Path, baseline: str, threshold: float) -> Row:
         return Row(name, base_time, "-", None, MISSING_IN_HEAD)
     relative = mean_estimate(change)
     head_time = format_time(mean_estimate(head_estimates))
-    return Row(name, base_time, head_time, relative, status_for(relative, threshold))
+    return Row(name, base_time, head_time, relative, status_for(change_lower_bound(change), threshold))
 
 
 def time_rows(criterion_dir: Path, baseline: str, threshold: float) -> list[Row]:
@@ -215,7 +219,7 @@ def verdict(time: list[Row], memory: list[Row], args: argparse.Namespace) -> int
     for note in filter(None, notes):
         print(f"note: {note}")
     if slow:
-        print(f"time regressions above +{args.time_threshold:g}%: {', '.join(slow)}")
+        print(f"time regressions confidently above +{args.time_threshold:g}%: {', '.join(slow)}")
     if grown:
         print(f"memory regressions above +{args.memory_threshold:g}%: {', '.join(grown)}")
     if slow or grown:

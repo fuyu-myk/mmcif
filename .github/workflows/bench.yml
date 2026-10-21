@@ -19,6 +19,7 @@ jobs:
         with:
           path: corpus/data
           key: corpus-${{ hashFiles('corpus/candidates.toml') }}
+      - run: python3 -m unittest discover -s bench -p "test_*.py"
       - run: python3 corpus/fetch.py
       - name: Bench base and head, then gate regressions
         run: python3 bench/run.py --base "$BASE_SHA" --warm-up-time 1 --measurement-time 3
