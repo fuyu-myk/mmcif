@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use mmcif_cif::Block;
 
@@ -61,30 +61,34 @@ fn read_polymers(block: &Block<'_>) -> Result<HashMap<String, Polymer>, ReadErro
         let ids = table.required_column("entity_id")?;
         let nums = table.required_column("num")?;
         let comps = table.required_column("mon_id")?;
+        let mut positions: HashMap<(String, LabelSeqId), usize> = HashMap::new();
         for row in 0..table.rows() {
             let num: u32 = nums.required_parse(row)?;
             let seq = LabelSeqId::new(num)
                 .ok_or_else(|| nums.invalid(row, "0", "sequence numbers start at 1"))?;
             let comp = CompId::new(comps.required_text(row)?);
+            let entity = ids.required_text(row)?;
             let polymer = polymers
-                .entry(ids.required_text(row)?.to_owned())
+                .entry(entity.to_owned())
                 .or_insert_with(|| Polymer {
                     kind: PolymerType::Other(String::new()),
                     canonical_sequence: None,
                     sequence: Vec::new(),
                 });
-            match polymer
-                .sequence
-                .iter_mut()
-                .rev()
-                .find(|position| position.seq == seq)
-            {
-                Some(position) if !position.comps.contains(&comp) => position.comps.push(comp),
-                Some(_) => {}
-                None => polymer.sequence.push(SequencePosition {
-                    seq,
-                    comps: vec![comp],
-                }),
+            match positions.get(&(entity.to_owned(), seq)) {
+                Some(&index) => {
+                    let position = &mut polymer.sequence[index];
+                    if !position.comps.contains(&comp) {
+                        position.comps.push(comp);
+                    }
+                }
+                None => {
+                    positions.insert((entity.to_owned(), seq), polymer.sequence.len());
+                    polymer.sequence.push(SequencePosition {
+                        seq,
+                        comps: vec![comp],
+                    });
+                }
             }
         }
     }
@@ -175,12 +179,12 @@ fn read_asym_ids(
     block: &Block<'_>,
     models: &[Model],
 ) -> Result<HashMap<String, Vec<LabelAsymId>>, ReadError> {
-    let mut asym_ids: HashMap<String, Vec<LabelAsymId>> = HashMap::new();
+    let mut asym_ids: HashMap<String, BTreeSet<LabelAsymId>> = HashMap::new();
     let mut add = |entity: &str, asym: &LabelAsymId| {
-        let list = asym_ids.entry(entity.to_owned()).or_default();
-        if !list.contains(asym) {
-            list.push(asym.clone());
-        }
+        asym_ids
+            .entry(entity.to_owned())
+            .or_default()
+            .insert(asym.clone());
     };
     if let Some(table) = Table::optional(block, "struct_asym") {
         let ids = table.required_column("id")?;
@@ -196,8 +200,8 @@ fn read_asym_ids(
             add(entity.as_str(), &chain.label_asym);
         }
     }
-    for list in asym_ids.values_mut() {
-        list.sort();
-    }
-    Ok(asym_ids)
+    Ok(asym_ids
+        .into_iter()
+        .map(|(entity, asyms)| (entity, asyms.into_iter().collect()))
+        .collect())
 }

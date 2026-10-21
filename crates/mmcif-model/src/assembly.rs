@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::expression::{InvalidExpression, OperatorExpression};
 use crate::ids::{AssemblyId, LabelAsymId, OperatorId};
 use crate::structure::{Chain, Model, Structure};
@@ -150,13 +152,18 @@ impl Structure {
             .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
         let mut chains = Vec::new();
         for generator in &assembly.generators {
+            let wanted: HashSet<&LabelAsymId> = generator.asym_ids.iter().collect();
+            let selected: Vec<&Chain> = model
+                .chains
+                .iter()
+                .filter(|chain| chain.operators.is_empty() && wanted.contains(&chain.label_asym))
+                .collect();
             for combination in generator.operators.combinations() {
                 let transform = self.combined_transform(id, &combination)?;
-                let selected = model.chains.iter().filter(|chain| {
-                    chain.operators.is_empty() && generator.asym_ids.contains(&chain.label_asym)
-                });
                 chains.extend(
-                    selected.map(|chain| transformed_chain(chain, &transform, &combination)),
+                    selected
+                        .iter()
+                        .map(|chain| transformed_chain(chain, &transform, &combination)),
                 );
             }
         }

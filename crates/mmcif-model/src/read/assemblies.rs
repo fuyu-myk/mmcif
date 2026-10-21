@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use mmcif_cif::Block;
 
 use crate::assembly::{Assembly, Generator, Operator, Transform};
@@ -63,6 +65,11 @@ pub(crate) fn read_assemblies(block: &Block<'_>) -> Result<Vec<Assembly>, ReadEr
     let ids = table.required_column("assembly_id")?;
     let expressions = table.required_column("oper_expression")?;
     let asym_lists = table.required_column("asym_id_list")?;
+    let mut index_of: HashMap<String, usize> = assemblies
+        .iter()
+        .enumerate()
+        .map(|(index, assembly)| (assembly.id.to_string(), index))
+        .collect();
     for row in 0..table.rows() {
         let id = ids.required_text(row)?;
         let asym_ids = asym_lists
@@ -73,16 +80,10 @@ pub(crate) fn read_assemblies(block: &Block<'_>) -> Result<Vec<Assembly>, ReadEr
             .map(LabelAsymId::new)
             .collect();
         let generator = Generator::new(expressions.required_text(row)?, asym_ids)?;
-        let index = match assemblies
-            .iter()
-            .position(|assembly| assembly.id.as_str() == id)
-        {
-            Some(index) => index,
-            None => {
-                assemblies.push(Assembly::new(AssemblyId::new(id), Vec::new()));
-                assemblies.len() - 1
-            }
-        };
+        let index = *index_of.entry(id.to_owned()).or_insert_with(|| {
+            assemblies.push(Assembly::new(AssemblyId::new(id), Vec::new()));
+            assemblies.len() - 1
+        });
         assemblies[index].generators.push(generator);
     }
     Ok(assemblies)

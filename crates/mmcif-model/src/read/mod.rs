@@ -4,11 +4,14 @@ mod entities;
 mod numbering;
 mod table;
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use mmcif_cif::{Block, Document};
 
+use crate::entity::Entity;
 use crate::error::ReadError;
+use crate::ids::{EntityId, LabelAsymId};
 use crate::pdb;
 use crate::structure::{Model, Structure};
 
@@ -38,13 +41,14 @@ impl Structure {
     }
 }
 
-fn assign_missing_entities(models: &mut [Model], entities: &[crate::entity::Entity]) {
+fn assign_missing_entities(models: &mut [Model], entities: &[Entity]) {
+    let by_asym: HashMap<&LabelAsymId, &EntityId> = entities
+        .iter()
+        .flat_map(|entity| entity.asym_ids.iter().map(move |asym| (asym, &entity.id)))
+        .collect();
     for chain in models.iter_mut().flat_map(|model| model.chains.iter_mut()) {
         if chain.entity.is_none() {
-            chain.entity = entities
-                .iter()
-                .find(|entity| entity.asym_ids.contains(&chain.label_asym))
-                .map(|entity| entity.id.clone());
+            chain.entity = by_asym.get(&chain.label_asym).map(|&id| id.clone());
         }
     }
 }
