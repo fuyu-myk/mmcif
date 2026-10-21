@@ -135,6 +135,7 @@ impl Assembly {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum AssemblyError {
     #[error("no assembly {0}")]
     UnknownAssembly(AssemblyId),

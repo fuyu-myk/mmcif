@@ -5,6 +5,7 @@ use mmcif_cif::ParseError;
 use crate::format::{FORMAT_VERSION, MAX_ID_LEN};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CcdError {
     #[error(transparent)]
     Io(#[from] io::Error),

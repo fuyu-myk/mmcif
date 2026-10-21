@@ -4,6 +4,7 @@ use crate::document::{Cell, Document, RawBlock, RawEntry, RawLoop, Span};
 use crate::value::{InvalidValue, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum BuildError {
     #[error("no data block has been started")]
     NoBlock,

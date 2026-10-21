@@ -2,6 +2,7 @@ use crate::expression::InvalidExpression;
 use crate::ids::{AuthAsymId, LabelAsymId};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ReadError {
     #[error(transparent)]
     Cif(#[from] mmcif_cif::Error),

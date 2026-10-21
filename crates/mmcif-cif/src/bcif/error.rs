@@ -1,6 +1,7 @@
 use crate::builder::BuildError;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum BcifError {
     #[error("MessagePack data ends unexpectedly at byte {offset}")]
     Truncated { offset: usize },

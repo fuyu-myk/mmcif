@@ -3,6 +3,7 @@ use crate::ids::{EntityId, LabelAsymId};
 use crate::structure::{Atom, Chain, Model, Residue, Structure};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum BranchError {
     #[error("no chain {0}")]
     UnknownChain(LabelAsymId),

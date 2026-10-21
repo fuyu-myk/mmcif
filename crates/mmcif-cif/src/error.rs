@@ -12,6 +12,7 @@ pub struct ParseError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ParseErrorKind {
     #[error("unterminated quoted value")]
     UnterminatedQuote,
@@ -61,6 +62,7 @@ impl ParseError {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
