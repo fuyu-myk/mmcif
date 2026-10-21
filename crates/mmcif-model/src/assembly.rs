@@ -1,7 +1,6 @@
+use crate::expression::{InvalidExpression, OperatorExpression};
 use crate::ids::{AssemblyId, LabelAsymId, OperatorId};
 use crate::structure::{Chain, Model, Structure};
-
-const MAX_COMBINATIONS: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
@@ -74,7 +73,7 @@ impl Operator {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Generator {
     pub(crate) expression: String,
-    pub(crate) combinations: Vec<Vec<OperatorId>>,
+    pub(crate) operators: OperatorExpression,
     pub(crate) asym_ids: Vec<LabelAsymId>,
 }
 
@@ -82,7 +81,7 @@ impl Generator {
     pub fn new(expression: &str, asym_ids: Vec<LabelAsymId>) -> Result<Self, InvalidExpression> {
         Ok(Generator {
             expression: expression.to_owned(),
-            combinations: parse_operator_expression(expression)?,
+            operators: OperatorExpression::parse(expression)?,
             asym_ids,
         })
     }
@@ -91,8 +90,8 @@ impl Generator {
         &self.expression
     }
 
-    pub fn combinations(&self) -> &[Vec<OperatorId>] {
-        &self.combinations
+    pub fn operators(&self) -> &OperatorExpression {
+        &self.operators
     }
 
     pub fn asym_ids(&self) -> &[LabelAsymId] {
@@ -129,15 +128,8 @@ impl Assembly {
     }
 
     pub fn operator_count(&self) -> usize {
-        self.generators.iter().map(|g| g.combinations.len()).sum()
+        self.generators.iter().map(|g| g.operators.len()).sum()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("invalid operator expression {expression:?}: {reason}")]
-pub struct InvalidExpression {
-    pub expression: String,
-    pub reason: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -151,75 +143,6 @@ pub enum AssemblyError {
     },
 }
 
-pub fn parse_operator_expression(
-    expression: &str,
-) -> Result<Vec<Vec<OperatorId>>, InvalidExpression> {
-    let invalid = |reason| InvalidExpression {
-        expression: expression.to_owned(),
-        reason,
-    };
-    let compact: String = expression.chars().filter(|c| !c.is_whitespace()).collect();
-    let groups: Vec<&str> = if compact.starts_with('(') {
-        let mut groups = Vec::new();
-        let mut rest = compact.as_str();
-        while !rest.is_empty() {
-            let inner = rest
-                .strip_prefix('(')
-                .ok_or_else(|| invalid("text outside parentheses"))?;
-            let close = inner
-                .find(')')
-                .ok_or_else(|| invalid("unbalanced parentheses"))?;
-            groups.push(&inner[..close]);
-            rest = &inner[close + 1..];
-        }
-        groups
-    } else {
-        vec![compact.as_str()]
-    };
-    let mut combinations: Vec<Vec<OperatorId>> = vec![Vec::new()];
-    for group in groups {
-        let members = expand_group(group).map_err(invalid)?;
-        let total = combinations.len().saturating_mul(members.len());
-        if total > MAX_COMBINATIONS {
-            return Err(invalid("too many operator combinations"));
-        }
-        combinations = combinations
-            .iter()
-            .flat_map(|prefix| {
-                members.iter().map(move |member| {
-                    let mut combination = prefix.clone();
-                    combination.push(member.clone());
-                    combination
-                })
-            })
-            .collect();
-    }
-    Ok(combinations)
-}
-
-fn expand_group(group: &str) -> Result<Vec<OperatorId>, &'static str> {
-    let mut members = Vec::new();
-    for item in group.split(',') {
-        if item.is_empty() || item.contains(['(', ')']) {
-            return Err("empty or nested operator item");
-        }
-        let range = item
-            .split_once('-')
-            .and_then(|(low, high)| Some((low.parse::<u64>().ok()?, high.parse::<u64>().ok()?)));
-        match range {
-            Some((low, high)) if low > high => return Err("descending operator range"),
-            Some((low, high)) => {
-                if (high - low) as usize >= MAX_COMBINATIONS.saturating_sub(members.len()) {
-                    return Err("operator range too large");
-                }
-                members.extend((low..=high).map(|n| OperatorId::new(n.to_string())));
-            }
-            None => members.push(OperatorId::new(item)),
-        }
-    }
-    Ok(members)
-}
-
 impl Structure {
     pub fn assemble(&self, id: &AssemblyId, model: &Model) -> Result<Model, AssemblyError> {
         let assembly = self
@@ -227,13 +150,13 @@ impl Structure {
             .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
         let mut chains = Vec::new();
         for generator in &assembly.generators {
-            for combination in &generator.combinations {
-                let transform = self.combined_transform(id, combination)?;
+            for combination in generator.operators.combinations() {
+                let transform = self.combined_transform(id, &combination)?;
                 let selected = model.chains.iter().filter(|chain| {
                     chain.operators.is_empty() && generator.asym_ids.contains(&chain.label_asym)
                 });
                 chains.extend(
-                    selected.map(|chain| transformed_chain(chain, &transform, combination)),
+                    selected.map(|chain| transformed_chain(chain, &transform, &combination)),
                 );
             }
         }
@@ -275,49 +198,6 @@ fn transformed_chain(chain: &Chain, transform: &Transform, combination: &[Operat
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn ids(combinations: &[Vec<OperatorId>]) -> Vec<Vec<&str>> {
-        combinations
-            .iter()
-            .map(|c| c.iter().map(OperatorId::as_str).collect())
-            .collect()
-    }
-
-    #[test]
-    fn parses_lists_ranges_and_products() {
-        assert_eq!(ids(&parse_operator_expression("1").unwrap()), [["1"]]);
-        assert_eq!(
-            ids(&parse_operator_expression("1,2,5").unwrap()),
-            [["1"], ["2"], ["5"]]
-        );
-        assert_eq!(
-            ids(&parse_operator_expression("(1-3)").unwrap()),
-            [["1"], ["2"], ["3"]]
-        );
-        assert_eq!(
-            ids(&parse_operator_expression("(X0)(1-2,P)").unwrap()),
-            [["X0", "1"], ["X0", "2"], ["X0", "P"]]
-        );
-        assert_eq!(
-            parse_operator_expression("(1-60)(61-88)").unwrap().len(),
-            60 * 28
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_expressions() {
-        for bad in [
-            "",
-            "1,,2",
-            "(1",
-            "1)(2",
-            "(3-1)",
-            "((1))",
-            "(1-99999999999)",
-        ] {
-            assert!(parse_operator_expression(bad).is_err(), "{bad}");
-        }
-    }
 
     #[test]
     fn composition_applies_the_inner_transform_first() {

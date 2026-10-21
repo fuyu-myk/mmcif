@@ -3,6 +3,7 @@ mod assembly;
 mod branch;
 mod entity;
 mod error;
+mod expression;
 mod ids;
 mod key;
 mod numbering;
@@ -11,16 +12,14 @@ mod read;
 mod structure;
 
 pub use altloc::AltlocPolicy;
-pub use assembly::{
-    Assembly, AssemblyError, Generator, InvalidExpression, Operator, Transform,
-    parse_operator_expression,
-};
+pub use assembly::{Assembly, AssemblyError, Generator, Operator, Transform};
 pub use branch::{BranchBond, BranchError, LinkedAtom};
 pub use entity::{
     Branch, BranchAtom, BranchLink, BranchMonomer, Entity, EntityKind, Polymer, PolymerType,
     SequencePosition,
 };
 pub use error::ReadError;
+pub use expression::{InvalidExpression, OperatorExpression};
 pub use ids::{
     AltLoc, AssemblyId, AtomName, AuthAsymId, AuthSeqId, CompId, Element, EntityId, InsCode,
     LabelAsymId, LabelSeqId, ModelNumber, OperatorId,

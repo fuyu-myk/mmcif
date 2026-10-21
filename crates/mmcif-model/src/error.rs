@@ -1,4 +1,4 @@
-use crate::assembly::InvalidExpression;
+use crate::expression::InvalidExpression;
 use crate::ids::{AuthAsymId, LabelAsymId};
 
 #[derive(Debug, thiserror::Error)]
