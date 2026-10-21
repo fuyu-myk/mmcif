@@ -12,12 +12,16 @@ license = "MIT OR Apache-2.0"
 mmcif-cif = { path = "crates/mmcif-cif", version = "0.1.0" }
 mmcif-model = { path = "crates/mmcif-model", version = "0.1.0" }
 mmcif-ccd = { path = "crates/mmcif-ccd", version = "0.1.0" }
+mmcif-geom = { path = "crates/mmcif-geom", version = "0.1.0" }
 memchr = "2.8"
 memmap2 = "0.9"
 thiserror = "2.0"
 proptest = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+pyo3 = "0.30"
+numpy = "0.30"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
