@@ -1,0 +1,20 @@
+[package]
+name = "mmcif-spec"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mmcif-ir.workspace = true
+mmcif-model.workspace = true
+saphyr-parser.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+mmcif-ir.workspace = true
+
+[lints]
+workspace = true
