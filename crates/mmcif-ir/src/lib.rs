@@ -1,3 +1,5 @@
+//! The shape of a design problem. Every type here may change until 1.0.
+
 mod constraint;
 mod error;
 mod ids;

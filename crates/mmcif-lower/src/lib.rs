@@ -1,3 +1,5 @@
+//! Backend input written from a design. The output format tracks each backend and may change until 1.0.
+
 mod boltzgen;
 mod capability;
 mod ranges;

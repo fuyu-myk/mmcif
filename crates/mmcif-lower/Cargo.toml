@@ -1,11 +1,13 @@
 [package]
 name = "mmcif-lower"
-version = "0.0.0"
+description = "Write design specifications out for protein design backends"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+keywords = ["protein", "design", "boltzgen", "rfdiffusion", "bioinformatics"]
+categories = ["science::computational-biology::structural-modeling"]
 
 [dependencies]
 mmcif-ir.workspace = true

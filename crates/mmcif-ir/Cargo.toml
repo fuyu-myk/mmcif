@@ -1,12 +1,13 @@
 [package]
 name = "mmcif-ir"
 description = "Design specification IR: slots, the determinacy lattice, constraints and instantiation"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+keywords = ["protein", "design", "ir", "constraints", "bioinformatics"]
+categories = ["science::computational-biology::structural-modeling", "data-structures"]
 
 [dependencies]
 mmcif-model.workspace = true

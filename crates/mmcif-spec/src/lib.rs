@@ -1,3 +1,5 @@
+//! Parsing and checking of design specifications. Every type here may change until 1.0.
+
 mod check;
 mod design;
 mod diagnostic;

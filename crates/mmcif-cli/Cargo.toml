@@ -1,11 +1,13 @@
 [package]
 name = "mmcif-cli"
-version = "0.0.0"
+description = "Check design specifications and write them out for design backends"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+keywords = ["protein", "design", "cli", "yaml", "bioinformatics"]
+categories = ["science::computational-biology::structural-modeling", "command-line-utilities"]
 
 [[bin]]
 name = "mmcif"

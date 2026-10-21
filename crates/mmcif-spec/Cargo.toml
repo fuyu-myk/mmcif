@@ -1,11 +1,13 @@
 [package]
 name = "mmcif-spec"
-version = "0.0.0"
+description = "Parse and check design specifications against structure files"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+keywords = ["protein", "design", "yaml", "diagnostics", "bioinformatics"]
+categories = ["science::computational-biology::structural-modeling", "parser-implementations"]
 
 [dependencies]
 mmcif-ir.workspace = true
