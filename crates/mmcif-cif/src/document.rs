@@ -389,11 +389,14 @@ impl<'a> Loop<'a> {
     }
 
     pub fn values(&self) -> impl ExactSizeIterator<Item = Value<'a>> + use<'a> {
-        let lp = *self;
+        let src = self.src;
+        let data = self.data;
         let width = self.raw_tags().len();
-        (0..self.row_count() * width).map(move |index| {
-            lp.value(index / width, index % width)
-                .expect("index is within the loop")
+        (0..self.row_count() * width).map(move |index| match data {
+            LoopData::Rows(raw) => raw.cells[index].resolve(src),
+            LoopData::Columns(raw) => column_cells(&raw.columns[index % width])
+                .get(src, index / width)
+                .expect("index is within the loop"),
         })
     }
 
