@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use mmcif_cif::{Block, Category, Column, Value};
+use mmcif_cif::{Block, Category, Column, TypedValue, Value};
 
 use crate::error::ReadError;
 
@@ -81,7 +81,24 @@ impl<'a> Field<'a> {
         })
     }
 
-    pub fn parse<T: FromStr>(&self, row: usize) -> Result<Option<T>, ReadError> {
+    fn typed<T: Number>(&self, row: usize) -> Option<Result<Option<T>, ReadError>> {
+        let typed = self.column?.typed(row)?;
+        let invalid = |shown: String| self.invalid(row, &shown, "not a valid number");
+        Some(match typed {
+            TypedValue::Inapplicable | TypedValue::Unknown => Ok(None),
+            TypedValue::Int(value) => T::from_int(value)
+                .map(Some)
+                .ok_or_else(|| invalid(value.to_string())),
+            TypedValue::Float(value) => T::from_float(value)
+                .map(Some)
+                .ok_or_else(|| invalid(value.to_string())),
+        })
+    }
+
+    pub fn parse<T: Number>(&self, row: usize) -> Result<Option<T>, ReadError> {
+        if let Some(typed) = self.typed(row) {
+            return typed;
+        }
         self.text(row)
             .map(|text| {
                 text.parse()
@@ -90,10 +107,17 @@ impl<'a> Field<'a> {
             .transpose()
     }
 
-    pub fn required_parse<T: FromStr>(&self, row: usize) -> Result<T, ReadError> {
-        let text = self.required_text(row)?;
-        text.parse()
-            .map_err(|_| self.invalid(row, text, "not a valid number"))
+    pub fn required_parse<T: Number>(&self, row: usize) -> Result<T, ReadError> {
+        match self.typed(row) {
+            Some(Ok(Some(value))) => Ok(value),
+            Some(Ok(None)) => Err(self.invalid(row, "", "missing value")),
+            Some(Err(error)) => Err(error),
+            None => {
+                let text = self.required_text(row)?;
+                text.parse()
+                    .map_err(|_| self.invalid(row, text, "not a valid number"))
+            }
+        }
     }
 
     pub fn single_char(&self, row: usize) -> Result<Option<char>, ReadError> {
@@ -104,6 +128,82 @@ impl<'a> Field<'a> {
         match (chars.next(), chars.next()) {
             (Some(code), None) => Ok(Some(code)),
             _ => Err(self.invalid(row, text, "expected a single character")),
+        }
+    }
+}
+
+pub(crate) trait Number: FromStr + Sized {
+    fn from_int(value: i64) -> Option<Self>;
+    fn from_float(value: f64) -> Option<Self>;
+}
+
+fn integral(value: f64) -> Option<i128> {
+    (value.fract() == 0.0 && value.abs() < 1e30).then_some(value as i128)
+}
+
+macro_rules! integer_number {
+    ($($ty:ty),*) => {
+        $(impl Number for $ty {
+            fn from_int(value: i64) -> Option<Self> {
+                Self::try_from(value).ok()
+            }
+
+            fn from_float(value: f64) -> Option<Self> {
+                if Self::MIN == 0 && value.is_sign_negative() {
+                    return None;
+                }
+                integral(value).and_then(|value| Self::try_from(value).ok())
+            }
+        })*
+    };
+}
+
+integer_number!(i8, i32, u32, i64);
+
+impl Number for f64 {
+    fn from_int(value: i64) -> Option<Self> {
+        Some(value as f64)
+    }
+
+    fn from_float(value: f64) -> Option<Self> {
+        Some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_parse<T: FromStr>(shown: &str) -> Option<T> {
+        shown.parse().ok()
+    }
+
+    #[test]
+    fn typed_conversions_agree_with_parsing_the_text() {
+        for value in [
+            5.0,
+            -0.0,
+            0.5,
+            1e20,
+            f64::NAN,
+            f64::INFINITY,
+            -3.0,
+            4294967295.0,
+            4294967296.0,
+        ] {
+            let shown = value.to_string();
+            assert_eq!(i32::from_float(value), text_parse::<i32>(&shown), "{shown}");
+            assert_eq!(u32::from_float(value), text_parse::<u32>(&shown), "{shown}");
+            assert_eq!(i64::from_float(value), text_parse::<i64>(&shown), "{shown}");
+        }
+        for value in [0i64, -1, 300, i64::MAX, 1 << 53, (1 << 53) + 1] {
+            let shown = value.to_string();
+            assert_eq!(i8::from_int(value), text_parse::<i8>(&shown), "{shown}");
+            assert_eq!(u32::from_int(value), text_parse::<u32>(&shown), "{shown}");
+            assert_eq!(
+                f64::from_int(value).map(f64::to_bits),
+                text_parse::<f64>(&shown).map(f64::to_bits)
+            );
         }
     }
 }

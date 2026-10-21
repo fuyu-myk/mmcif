@@ -82,3 +82,29 @@ fn binary_and_text_entries_give_the_same_models() {
     }
     assert!(compared > 0, "no .bcif files in {}", dir.display());
 }
+
+#[test]
+#[ignore = "needs the downloaded corpus"]
+fn typed_binary_columns_match_the_text_path_exactly() {
+    let dir = corpus_dir();
+    let mut compared = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "bcif") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        let typed = mmcif_model::parse_bcif(&bytes).unwrap();
+        let text = mmcif_cif::Document::from_bcif(&bytes)
+            .unwrap()
+            .to_cif_string();
+        let via_text = mmcif_model::parse_mmcif(&text).unwrap();
+        assert!(
+            typed == via_text,
+            "{} differs between typed and text paths",
+            path.display()
+        );
+        compared += 1;
+    }
+    assert!(compared > 0);
+}
