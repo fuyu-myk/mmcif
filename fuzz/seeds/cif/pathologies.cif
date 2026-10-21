@@ -1,0 +1,170 @@
+data_TEST
+#
+_entry.id TEST
+#
+loop_
+_entity.id
+_entity.type
+_entity.pdbx_description
+1 polymer 'Heavy chain'
+2 branched 'beta-D-mannopyranose-(1-4)-2-acetamido-2-deoxy-beta-D-glucopyranose'
+3 non-polymer 'ZINC ION'
+4 water water
+#
+_entity_poly.entity_id 1
+_entity_poly.type 'polypeptide(L)'
+_entity_poly.pdbx_seq_one_letter_code_can
+;GSAK
+VT
+;
+#
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.num
+_entity_poly_seq.mon_id
+_entity_poly_seq.hetero
+1 1 GLY n
+1 2 SER y
+1 2 THR y
+1 3 ALA n
+1 4 LYS n
+1 5 VAL n
+1 6 THR n
+#
+_pdbx_entity_branch.entity_id 2
+_pdbx_entity_branch.type oligosaccharide
+#
+loop_
+_pdbx_entity_branch_list.entity_id
+_pdbx_entity_branch_list.comp_id
+_pdbx_entity_branch_list.num
+_pdbx_entity_branch_list.hetero
+2 NAG 1 n
+2 BMA 2 n
+#
+loop_
+_pdbx_entity_branch_link.link_id
+_pdbx_entity_branch_link.entity_id
+_pdbx_entity_branch_link.entity_branch_list_num_1
+_pdbx_entity_branch_link.comp_id_1
+_pdbx_entity_branch_link.atom_id_1
+_pdbx_entity_branch_link.leaving_atom_id_1
+_pdbx_entity_branch_link.entity_branch_list_num_2
+_pdbx_entity_branch_link.comp_id_2
+_pdbx_entity_branch_link.atom_id_2
+_pdbx_entity_branch_link.leaving_atom_id_2
+_pdbx_entity_branch_link.value_order
+1 2 2 BMA C1 O1 1 NAG O4 HO4 sing
+#
+loop_
+_struct_asym.id
+_struct_asym.entity_id
+AA 1
+B 2
+C 3
+D 4
+#
+loop_
+_pdbx_poly_seq_scheme.asym_id
+_pdbx_poly_seq_scheme.entity_id
+_pdbx_poly_seq_scheme.seq_id
+_pdbx_poly_seq_scheme.mon_id
+_pdbx_poly_seq_scheme.pdb_seq_num
+_pdbx_poly_seq_scheme.auth_seq_num
+_pdbx_poly_seq_scheme.pdb_mon_id
+_pdbx_poly_seq_scheme.pdb_strand_id
+_pdbx_poly_seq_scheme.pdb_ins_code
+_pdbx_poly_seq_scheme.hetero
+AA 1 1 GLY 99 ? ? H1 . n
+AA 1 2 SER 100 100 SER H1 . y
+AA 1 2 THR 100 100 THR H1 . y
+AA 1 3 ALA 100 100 ALA H1 A n
+AA 1 4 LYS 101 101 LYS H1 . n
+AA 1 5 VAL 102 102 VAL H1 . n
+AA 1 6 THR 103 ? ? H1 . n
+#
+loop_
+_pdbx_branch_scheme.asym_id
+_pdbx_branch_scheme.entity_id
+_pdbx_branch_scheme.mon_id
+_pdbx_branch_scheme.num
+_pdbx_branch_scheme.pdb_asym_id
+_pdbx_branch_scheme.pdb_seq_num
+_pdbx_branch_scheme.auth_seq_num
+B 2 NAG 1 H1 1 1
+B 2 BMA 2 H1 2 2
+#
+loop_
+_pdbx_struct_assembly.id
+_pdbx_struct_assembly.details
+1 author_defined_assembly
+2 software_defined_assembly
+3 software_defined_assembly
+#
+loop_
+_pdbx_struct_assembly_gen.assembly_id
+_pdbx_struct_assembly_gen.oper_expression
+_pdbx_struct_assembly_gen.asym_id_list
+1 1 AA,B,C,D
+2 '(1,2)' AA,C
+3 '(2)(3)' AA
+#
+loop_
+_pdbx_struct_oper_list.id
+_pdbx_struct_oper_list.type
+_pdbx_struct_oper_list.matrix[1][1]
+_pdbx_struct_oper_list.matrix[1][2]
+_pdbx_struct_oper_list.matrix[1][3]
+_pdbx_struct_oper_list.vector[1]
+_pdbx_struct_oper_list.matrix[2][1]
+_pdbx_struct_oper_list.matrix[2][2]
+_pdbx_struct_oper_list.matrix[2][3]
+_pdbx_struct_oper_list.vector[2]
+_pdbx_struct_oper_list.matrix[3][1]
+_pdbx_struct_oper_list.matrix[3][2]
+_pdbx_struct_oper_list.matrix[3][3]
+_pdbx_struct_oper_list.vector[3]
+1 'identity operation' 1 0 0 0 0 1 0 0 0 0 1 0
+2 'point symmetry operation' -1 0 0 0 0 -1 0 0 0 0 1 0
+3 'translation' 1 0 0 10 0 1 0 0 0 0 1 0
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM   1  N  N  A SER AA 1 2 ? 1.000  2.000 3.000 0.60 10.0 ? 100 SER H1 N  1
+ATOM   2  C  CA A SER AA 1 2 ? 2.000  2.000 3.000 0.60 10.0 ? 100 SER H1 CA 1
+ATOM   3  N  N  B THR AA 1 2 ? 1.100  2.100 3.100 0.40 11.0 ? 100 THR H1 N  1
+ATOM   4  C  CA B THR AA 1 2 ? 2.100  2.100 3.100 0.40 11.0 ? 100 THR H1 CA 1
+ATOM   5  N  N  . ALA AA 1 3 A 3.000  2.000 3.000 1.00 12.0 ? 100 ALA H1 N  1
+ATOM   6  C  CA . ALA AA 1 3 A 4.000  2.000 3.000 1.00 12.0 ? 100 ALA H1 CA 1
+ATOM   7  C  CB A ALA AA 1 3 A 4.500  3.000 3.000 0.70 13.0 ? 100 ALA H1 CB 1
+ATOM   8  C  CB B ALA AA 1 3 A 4.500  1.000 3.000 0.30 13.0 ? 100 ALA H1 CB 1
+ATOM   9  N  N  . LYS AA 1 4 ? 5.000  2.000 3.000 1.00 14.0 1 101 LYS H1 N  1
+ATOM   10 N  N  . VAL AA 1 5 ? 6.000  2.000 3.000 1.00 15.0 ? 102 VAL H1 N  1
+HETATM 11 C  C1 . NAG B  2 . ? 10.000 0.000 0.000 1.00 20.0 ? 1   NAG H1 C1 1
+HETATM 12 O  O4 . NAG B  2 . ? 11.000 0.000 0.000 1.00 20.0 ? 1   NAG H1 O4 1
+HETATM 13 C  C1 . BMA B  2 . ? 12.000 0.000 0.000 1.00 21.0 ? 2   BMA H1 C1 1
+HETATM 14 ZN ZN . ZN  C  3 . ? 0.000  0.000 5.000 1.00 30.0 2 201 ZN  H1 ZN 1
+HETATM 15 O  O  . HOH D  4 . ? 7.000  7.000 7.000 1.00 40.0 ? 301 HOH H1 O  1
+HETATM 16 O  O  . HOH D  4 . ? 8.000  8.000 8.000 1.00 40.0 ? 302 HOH H1 O  1
+ATOM   17 N  N  . LYS AA 1 4 ? 5.500  2.500 3.500 1.00 14.0 1 101 LYS H1 N  2
+#

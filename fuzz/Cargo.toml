@@ -1,0 +1,37 @@
+[package]
+name = "mmcif-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mmcif-cif = { path = "../crates/mmcif-cif" }
+mmcif-model = { path = "../crates/mmcif-model" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "cif_round_trip"
+path = "fuzz_targets/cif_round_trip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structure_from_cif"
+path = "fuzz_targets/structure_from_cif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdb_parse"
+path = "fuzz_targets/pdb_parse.rs"
+test = false
+doc = false
+bench = false
