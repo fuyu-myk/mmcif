@@ -169,8 +169,7 @@ impl Spec {
         let mut found = Vec::new();
         for constraint in &self.constraints {
             match constraint {
-                Constraint::Bond { first, second }
-                | Constraint::Distance { first, second, .. } => {
+                Constraint::Bond { first, second } | Constraint::Distance { first, second, .. } => {
                     found.push(&first.slot);
                     found.push(&second.slot);
                 }

@@ -1,5 +1,6 @@
 use mmcif_ir::{
-    Bounds, Constraint, Geometry, Instantiated, IrError, Lengths, ResidueRef, Resolved, SlotIndex,
+    Bounds, Constraint, Geometry, Instantiated, IrError, Lengths, MAX_SLOTS, ResidueRef, Resolved,
+    SlotIndex,
 };
 use mmcif_model::LabelResidueKey;
 
@@ -15,11 +16,32 @@ const SIDE_CHAIN_REACH: f64 = 10.0;
 const TOLERANCE: f64 = 1e-6;
 
 pub fn check(source: SourceId, lowered: &Lowered, report: &mut Report) -> Option<Instantiated> {
+    longest_fits(source, lowered, report)?;
     let shortest = instantiate(source, lowered, &Lengths::minimum(&lowered.spec), report)?;
-    instantiate(source, lowered, &Lengths::maximum(&lowered.spec), report)?;
     atoms(source, lowered, &shortest, report);
     feasibility(source, lowered, &shortest, report);
     Some(shortest)
+}
+
+fn longest_fits(source: SourceId, lowered: &Lowered, report: &mut Report) -> Option<()> {
+    let longest = lowered.spec.length_bounds().1;
+    if longest <= u64::from(MAX_SLOTS) {
+        return Some(());
+    }
+    let span = lowered
+        .segments
+        .first()
+        .map(|segment| segment.span)
+        .unwrap_or(Span::new(0, 0));
+    report.push(
+        Diagnostic::error(
+            "unsatisfiable-lengths",
+            format!("the longest sampled length is {longest} slots, over the limit of {MAX_SLOTS}"),
+        )
+        .at(source, span, "no sampled length satisfies this")
+        .help("narrow the length ranges"),
+    );
+    None
 }
 
 fn instantiate(

@@ -471,6 +471,7 @@ version = "0.0.0"
 dependencies = [
  "mmcif-ir",
  "mmcif-model",
+ "proptest",
  "saphyr-parser",
  "thiserror",
 ]

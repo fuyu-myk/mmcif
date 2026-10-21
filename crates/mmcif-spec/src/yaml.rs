@@ -94,10 +94,10 @@ pub fn parse(source: SourceId, text: &str) -> Result<Node, Diagnostic> {
 
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|error| {
-            let at = error.marker().index();
+            let at = error.marker().index().min(text.len());
             Diagnostic::error("yaml-syntax", error.info().to_string()).at(
                 source,
-                Span::new(at, at + 1),
+                Span::new(at, (at + 1).min(text.len())),
                 "could not be parsed as YAML",
             )
         })?;

@@ -465,3 +465,20 @@ fn two_bonds_that_are_fine_alone_can_still_contradict_each_other() {
         "{rendered}"
     );
 }
+
+#[test]
+fn a_length_range_whose_top_end_is_absurd_is_refused_cheaply() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - protein:\n",
+        "      id: S\n",
+        "      sequence: 1..20000000\n",
+    ));
+    assert_eq!(checked.report.codes(), ["unsatisfiable-lengths"]);
+    assert!(checked.shortest.is_none());
+    assert!(
+        checked
+            .render()
+            .contains("the longest sampled length is 20000000 slots")
+    );
+}
