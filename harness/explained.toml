@@ -1,0 +1,21 @@
+[[explained]]
+entry = "1m4x"
+category = "assembly_set"
+reason = "gemmi 0.7.5 drops assemblies whose _pdbx_struct_assembly.details it does not recognise; assemblies 2 to 7 are only in ours"
+
+[[explained]]
+entry = "1m4x"
+category = "assembly_atom_count"
+match = "assembly 1:"
+reason = "gemmi 0.7.5 expands only the first group of '(1-60)(61-88)', giving 180 copies; ours gives 1680 x 3 = 5040, matching oligomeric_count 5040, and right-to-left composition places every copy on a 775-898 A capsid shell"
+
+[[explained]]
+entry = "1m4x"
+category = "assembly_copies"
+match = "assembly 1:"
+reason = "same composite expression as the assembly_atom_count rule"
+
+[[explained]]
+entry = "2buk"
+category = "assembly_set"
+reason = "gemmi 0.7.5 drops assemblies whose _pdbx_struct_assembly.details it does not recognise; with the details relabelled gemmi agrees on assemblies 2 to 5, and assembly 6 (X0)(1-60) gives 300 copies in ours like assembly 1 while gemmi expands only (X0)"

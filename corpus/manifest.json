@@ -1,0 +1,164 @@
+{
+  "12e8": [
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "13mf": [
+    "multichar_chain_ids"
+  ],
+  "1aon": [
+    "multichar_chain_ids",
+    "numbering_divergence"
+  ],
+  "1bna": [
+    "baseline",
+    "numbering_divergence"
+  ],
+  "1cbn": [
+    "altlocs",
+    "microheterogeneity"
+  ],
+  "1cle": [
+    "branched"
+  ],
+  "1crn": [
+    "baseline"
+  ],
+  "1d3z": [
+    "multiple_models"
+  ],
+  "1ehz": [
+    "baseline"
+  ],
+  "1ejg": [
+    "altlocs",
+    "microheterogeneity"
+  ],
+  "1h3y": [
+    "assembly_operators",
+    "branched",
+    "numbering_divergence"
+  ],
+  "1hzh": [
+    "branched",
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "1l2y": [
+    "multiple_models"
+  ],
+  "1m4x": [
+    "assembly_operators",
+    "numbering_divergence"
+  ],
+  "1mlc": [
+    "baseline"
+  ],
+  "1pfe": [
+    "altlocs",
+    "assembly_operators",
+    "microheterogeneity"
+  ],
+  "1ppb": [
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "1q11": [
+    "assembly_operators"
+  ],
+  "1stp": [
+    "assembly_operators"
+  ],
+  "1ubq": [
+    "baseline"
+  ],
+  "1ucs": [
+    "altlocs"
+  ],
+  "28xh": [
+    "multichar_chain_ids"
+  ],
+  "2buk": [
+    "assembly_operators",
+    "numbering_divergence"
+  ],
+  "2hpq": [
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "2jof": [
+    "multiple_models"
+  ],
+  "2ptc": [
+    "assembly_operators",
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "2v3l": [
+    "multiple_models",
+    "numbering_divergence"
+  ],
+  "2vb1": [
+    "altlocs"
+  ],
+  "2ykl": [
+    "insertion_codes",
+    "numbering_divergence"
+  ],
+  "3hfm": [
+    "baseline"
+  ],
+  "3nir": [
+    "altlocs",
+    "microheterogeneity"
+  ],
+  "3vn4": [
+    "assembly_operators",
+    "branched",
+    "numbering_divergence"
+  ],
+  "4hhb": [
+    "baseline"
+  ],
+  "5d8v": [
+    "altlocs"
+  ],
+  "5vc1": [
+    "altlocs",
+    "branched"
+  ],
+  "6h55": [
+    "assembly_operators",
+    "numbering_divergence"
+  ],
+  "6lu7": [
+    "assembly_operators",
+    "baseline"
+  ],
+  "6m0j": [
+    "altlocs",
+    "numbering_divergence"
+  ],
+  "6vsb": [
+    "branched",
+    "multichar_chain_ids"
+  ],
+  "6x5i": [
+    "multichar_chain_ids"
+  ],
+  "9a1a": [
+    "multiple_models"
+  ],
+  "9ewk": [
+    "altlocs",
+    "microheterogeneity"
+  ],
+  "9nfn": [
+    "multichar_chain_ids",
+    "numbering_divergence"
+  ],
+  "9ngk": [
+    "multichar_chain_ids",
+    "numbering_divergence"
+  ]
+}

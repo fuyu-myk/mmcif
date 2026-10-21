@@ -1,0 +1,35 @@
+[insertion_codes]
+predicate = "any non-null _atom_site.pdbx_PDB_ins_code"
+ids = ["1hzh", "1ppb", "12e8", "2ptc", "2ykl", "2hpq"]
+
+[altlocs]
+predicate = "any non-null _atom_site.label_alt_id"
+ids = ["1ejg", "2vb1", "3nir", "5d8v", "1ucs", "6m0j", "1cbn"]
+
+[microheterogeneity]
+predicate = "_entity_poly_seq.hetero is y for some row, or two label_comp_id at one (label_asym_id, label_seq_id)"
+ids = ["1cbn", "1ejg", "3nir", "9ewk", "1pfe"]
+
+[numbering_divergence]
+predicate = "some polymer atom with label_seq_id different from auth_seq_id"
+ids = ["2buk", "1m4x", "1aon", "1ppb", "12e8"]
+
+[assembly_operators]
+predicate = "some _pdbx_struct_assembly_gen.oper_expression expands to more than one operator"
+ids = ["1stp", "2buk", "1m4x", "6h55", "6lu7", "1q11"]
+
+[branched]
+predicate = "_pdbx_entity_branch present"
+ids = ["5vc1", "1h3y", "3vn4", "1cle", "6vsb", "1hzh"]
+
+[multichar_chain_ids]
+predicate = "some label_asym_id or auth_asym_id longer than one character"
+ids = ["9ngk", "9nfn", "28xh", "13mf", "6x5i"]
+
+[multiple_models]
+predicate = "more than one distinct pdbx_PDB_model_num"
+ids = ["1d3z", "2jof", "1l2y", "2v3l", "9a1a"]
+
+[baseline]
+predicate = "ordinary entry with atoms, listed explicitly"
+ids = ["1crn", "4hhb", "1ubq", "3hfm", "1mlc", "6lu7", "1bna", "1ehz"]
