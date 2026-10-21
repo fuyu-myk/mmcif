@@ -46,19 +46,26 @@ fn single_conformer_chain(chain: &Chain, policy: AltlocPolicy) -> Chain {
 }
 
 fn choose_altloc(group: &[Residue], policy: AltlocPolicy) -> Option<AltLoc> {
-    let mut candidates: Vec<(AltLoc, f64)> = Vec::new();
+    let mut totals: Vec<(AltLoc, f64, usize)> = Vec::new();
     for atom in group.iter().flat_map(|residue| &residue.atoms) {
         if atom.altloc.is_none() {
             continue;
         }
-        match candidates
+        match totals
             .iter_mut()
-            .find(|(altloc, _)| *altloc == atom.altloc)
+            .find(|(altloc, _, _)| *altloc == atom.altloc)
         {
-            Some((_, occupancy)) => *occupancy += atom.occupancy,
-            None => candidates.push((atom.altloc, atom.occupancy)),
+            Some((_, occupancy, count)) => {
+                *occupancy += atom.occupancy;
+                *count += 1;
+            }
+            None => totals.push((atom.altloc, atom.occupancy, 1)),
         }
     }
+    let candidates: Vec<(AltLoc, f64)> = totals
+        .into_iter()
+        .map(|(altloc, occupancy, count)| (altloc, occupancy / count as f64))
+        .collect();
     let first = candidates.first()?.0;
     match policy {
         AltlocPolicy::First => Some(first),

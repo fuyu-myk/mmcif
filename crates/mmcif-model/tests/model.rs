@@ -341,3 +341,25 @@ fn requires_atom_site() {
         ReadError::NoDataBlock
     ));
 }
+
+#[test]
+fn highest_occupancy_compares_mean_occupancy_per_altloc() {
+    let rows = "A A TRP N A N 1 1 0 0 0 0.40\nA A TRP CA A C 1 1 1 0 0 0.40\nA A TRP CB A C 1 1 2 0 0 0.40\n\
+                A A GLY N B N 1 1 0 1 0 0.60";
+    let text = format!(
+        "data_x\nloop_\n_atom_site.label_asym_id\n_atom_site.auth_asym_id\n_atom_site.label_comp_id\n\
+         _atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.type_symbol\n_atom_site.label_seq_id\n\
+         _atom_site.auth_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n{rows}\n"
+    );
+    let structure = parse_mmcif(&text).unwrap();
+    let selected = structure
+        .first_model()
+        .unwrap()
+        .single_conformer(AltlocPolicy::HighestOccupancy);
+    let comps: Vec<&str> = selected.chains()[0]
+        .residues()
+        .iter()
+        .map(|r| r.comp().as_str())
+        .collect();
+    assert_eq!(comps, ["GLY"]);
+}
