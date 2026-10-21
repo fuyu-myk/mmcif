@@ -1,0 +1,26 @@
+name: bench
+
+on:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: corpus/data
+          key: corpus-${{ hashFiles('corpus/candidates.toml') }}
+      - run: python3 corpus/fetch.py
+      - name: Bench base and head, then gate regressions
+        run: python3 bench/run.py --base "$BASE_SHA" --warm-up-time 1 --measurement-time 3
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
