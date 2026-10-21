@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - name: Run each fuzz target
+        run: |
+          run_target() {
+            mkdir -p "fuzz/corpus/$1"
+            cargo fuzz run -O "$1" "fuzz/corpus/$1" "fuzz/seeds/$2" -- -max_total_time=60 -max_len=8192
+          }
+          run_target cif_round_trip cif
+          run_target structure_from_cif cif
+          run_target pdb_parse pdb
+          run_target bcif_decode bcif
+
+  differential:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: corpus/data
+          key: corpus-${{ hashFiles('corpus/candidates.toml') }}
+      - run: uv venv harness/.venv
+      - run: uv pip install --python harness/.venv/bin/python -r harness/requirements.txt
+      - run: harness/.venv/bin/python corpus/fetch.py
+      - run: cargo test --release -p mmcif-cif -p mmcif-model --test corpus -- --ignored
+      - run: cargo build --release -p mmcif-dump
+      - run: harness/.venv/bin/python harness/run.py
+
+  dictionary:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: curl -sSf https://files.rcsb.org/pub/pdb/data/monomers/components.cif.gz | gunzip > components.cif
+      - run: cargo test --release -p mmcif-ccd --test full_dictionary -- --ignored
+        env:
+          MMCIF_CCD_FILE: components.cif
