@@ -200,16 +200,96 @@ fn chosen_lengths(built: &Built, picks: &[u32]) -> Lengths {
     Lengths::new(&built.spec, counts).expect("counts are inside their ranges")
 }
 
-fn brute_force_constrained(instantiated: &Instantiated) -> Vec<bool> {
+fn expected_constrained(spec: &Spec, instantiated: &Instantiated) -> Vec<bool> {
+    let mut touched: Vec<SlotIndex> = Vec::new();
+    for constraint in spec.constraints() {
+        match constraint {
+            Constraint::Distance { first, second, .. } => {
+                touched.extend(instantiated.resolve(&first.slot).unwrap());
+                touched.extend(instantiated.resolve(&second.slot).unwrap());
+            }
+            Constraint::SecondaryStructure { scope, .. } => match scope {
+                Scope::Address(address) => touched.extend(instantiated.resolve(address).unwrap()),
+                Scope::Group(id) => {
+                    for member in spec.group(id).unwrap() {
+                        touched.extend(instantiated.resolve(member).unwrap());
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
     let mut constrained = vec![false; instantiated.slot_count()];
-    for slot in instantiated
-        .constraints()
-        .iter()
-        .flat_map(Constraint::slots)
-    {
+    for slot in touched {
         constrained[slot.as_usize()] = true;
     }
     constrained
+}
+
+fn expected_determinacy(
+    shape: &Shape,
+    instantiated: &Instantiated,
+    index: SlotIndex,
+    constrained: bool,
+) -> Determinacy {
+    let origin = instantiated.origin(index).unwrap();
+    let element = shape.segments[origin.segment.as_usize()][origin.element.as_usize()];
+    let identity = match element.identity {
+        IdentityShape::Any => Level::Free,
+        IdentityShape::Restricted => Level::Restricted,
+        IdentityShape::Fixed => Level::Fixed,
+    };
+    let geometry = match (element.anchored, constrained) {
+        (true, _) => Level::Fixed,
+        (false, true) => Level::Restricted,
+        (false, false) => Level::Free,
+    };
+    Determinacy::new(identity, geometry)
+}
+
+fn small_element() -> impl Strategy<Value = ElementShape> {
+    (
+        prop_oneof![
+            Just(IdentityShape::Any),
+            Just(IdentityShape::Restricted),
+            Just(IdentityShape::Fixed)
+        ],
+        any::<bool>(),
+        0u32..3,
+        0u32..3,
+    )
+        .prop_map(|(identity, anchored, min, span)| ElementShape {
+            identity,
+            anchored,
+            min,
+            max: (min + span).max(1),
+        })
+}
+
+fn small_shape() -> impl Strategy<Value = Shape> {
+    prop::collection::vec(prop::collection::vec(small_element(), 0..3), 1..3).prop_map(|segments| {
+        Shape {
+            segments,
+            picks: Vec::new(),
+        }
+    })
+}
+
+fn shape_with_a_symbolic_element() -> impl Strategy<Value = Shape> {
+    shape().prop_map(|mut shape| {
+        let symbolic = ElementShape {
+            identity: IdentityShape::Any,
+            anchored: false,
+            min: 1,
+            max: 3,
+        };
+        match shape.segments.first_mut() {
+            Some(segment) => segment.push(symbolic),
+            None => shape.segments.push(vec![symbolic]),
+        }
+        shape
+    })
 }
 
 proptest! {
@@ -244,11 +324,11 @@ proptest! {
         let instantiated = spec.instantiate(&chosen_lengths(&built, &picks)).unwrap();
         let mut next = 0;
         for id in instantiated.segment_ids() {
-            let range = instantiated.segment_slots(id).unwrap();
-            prop_assert_eq!(range.start, next);
-            next = range.end;
+            let span = instantiated.segment_slots(id).unwrap();
+            prop_assert_eq!(span.start().get(), next);
+            next = span.end().get();
         }
-        prop_assert_eq!(next, instantiated.slot_count());
+        prop_assert_eq!(next as usize, instantiated.slot_count());
     }
 
     #[test]
@@ -269,13 +349,36 @@ proptest! {
         let built = build(&shape);
         let spec = &built.spec;
         let instantiated = spec.instantiate(&chosen_lengths(&built, &picks)).unwrap();
-        let expected = brute_force_constrained(&instantiated);
+        let expected = expected_constrained(spec, &instantiated);
         for index in 0..instantiated.slot_count() as u32 {
             let index = SlotIndex::new(index);
             prop_assert_eq!(instantiated.is_constrained(index).unwrap(), expected[index.as_usize()]);
         }
         for slot in instantiated.constraints().iter().flat_map(Constraint::slots) {
             prop_assert!(slot.as_usize() < instantiated.slot_count());
+        }
+    }
+
+    #[test]
+    fn resolved_scopes_and_groups_are_sorted_without_repeats(
+        shape in shape(),
+        picks in prop::collection::vec(0u32..6, 0..8),
+    ) {
+        let built = build(&shape);
+        let instantiated = built.spec.instantiate(&chosen_lengths(&built, &picks)).unwrap();
+        let tidy = |slots: &[SlotIndex]| {
+            let mut expected = slots.to_vec();
+            expected.sort_unstable();
+            expected.dedup();
+            expected
+        };
+        for constraint in instantiated.constraints() {
+            if let Constraint::SecondaryStructure { scope, .. } = constraint {
+                prop_assert_eq!(scope, &tidy(scope));
+            }
+        }
+        for (_, slots) in instantiated.groups() {
+            prop_assert_eq!(slots, tidy(slots));
         }
     }
 
@@ -287,25 +390,22 @@ proptest! {
         let built = build(&shape);
         let spec = &built.spec;
         let instantiated = spec.instantiate(&chosen_lengths(&built, &picks)).unwrap();
+        let constrained = expected_constrained(spec, &instantiated);
         for index in 0..instantiated.slot_count() as u32 {
             let index = SlotIndex::new(index);
-            let slot = instantiated.slot(index).unwrap();
             let determinacy = instantiated.determinacy(index).unwrap();
-            let anchored = slot.geometry.anchor().is_some();
-            let constrained = instantiated.is_constrained(index).unwrap();
-            let expected_geometry = match (anchored, constrained) {
-                (true, _) => Level::Fixed,
-                (false, true) => Level::Restricted,
-                (false, false) => Level::Free,
-            };
-            prop_assert_eq!(determinacy.geometry, expected_geometry);
-            prop_assert_eq!(determinacy.identity, slot.identity.level());
+            prop_assert_eq!(
+                determinacy,
+                expected_determinacy(&shape, &instantiated, index, constrained[index.as_usize()])
+            );
             prop_assert_eq!(determinacy.corner().is_some(), !determinacy.is_partial());
+            let source = instantiated.source(index).unwrap();
+            prop_assert_eq!(spec.determinacy(&source).unwrap(), determinacy);
         }
     }
 
     #[test]
-    fn every_valid_length_choice_lands_inside_the_bounds(shape in shape()) {
+    fn every_valid_length_choice_lands_inside_the_bounds(shape in small_shape()) {
         let spec = without_constraints(&shape);
         let ranges: Vec<(u32, u32)> = spec
             .symbolic_elements()
@@ -315,8 +415,6 @@ proptest! {
             .iter()
             .map(|(min, max)| u64::from(max - min + 1))
             .product();
-        prop_assume!(ranges.len() <= 3 && combinations <= 64);
-
         let (min, max) = spec.length_bounds();
         let mut seen = Vec::new();
         for combination in 0..combinations {
@@ -340,13 +438,15 @@ proptest! {
     }
 
     #[test]
-    fn counts_outside_their_range_are_rejected(shape in shape(), excess in 1u32..5) {
+    fn counts_outside_their_range_are_rejected(
+        shape in shape_with_a_symbolic_element(),
+        excess in 1u32..5,
+    ) {
         let spec = without_constraints(&shape);
         let counts: Vec<u32> = spec
             .symbolic_elements()
             .map(|(_, _, length)| length.max() + excess)
             .collect();
-        prop_assume!(!counts.is_empty());
         let rejected = Lengths::new(&spec, counts);
         prop_assert!(
             matches!(rejected, Err(IrError::LengthOutOfRange { .. })),
@@ -361,16 +461,10 @@ proptest! {
         geometry in prop::sample::select(vec![Level::Free, Level::Restricted, Level::Fixed]),
         narrower in prop::sample::select(vec![Level::Free, Level::Restricted, Level::Fixed]),
     ) {
-        let start = Determinacy { identity, geometry };
-        let narrowed = Determinacy {
-            identity: identity.max(narrower),
-            geometry,
-        };
+        let start = Determinacy::new(identity, geometry);
+        let narrowed = Determinacy::new(identity.max(narrower), geometry);
         prop_assert!(start <= narrowed);
-        let both = Determinacy {
-            identity: identity.max(narrower),
-            geometry: geometry.max(narrower),
-        };
+        let both = Determinacy::new(identity.max(narrower), geometry.max(narrower));
         prop_assert!(start <= both);
         prop_assert_eq!(start.corner().is_none(), start.is_partial());
     }

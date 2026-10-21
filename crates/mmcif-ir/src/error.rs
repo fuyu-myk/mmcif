@@ -1,3 +1,4 @@
+use crate::constraint::SymbolicAddress;
 use crate::ids::{ElementIndex, GroupId, SegmentId, SlotIndex, TokenIndex};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -52,4 +53,14 @@ pub enum IrError {
     DuplicateToken(SlotIndex),
     #[error("the specification holds more than {0} slots")]
     TooManySlots(u32),
+    #[error("segment {segment} element {element} holds slots of differing determinacy")]
+    MixedDeterminacy {
+        segment: SegmentId,
+        element: ElementIndex,
+    },
+    #[error("chosen lengths describe {actual} but this specification expects {expected}")]
+    LengthsFromAnotherSpec {
+        expected: SymbolicAddress,
+        actual: SymbolicAddress,
+    },
 }

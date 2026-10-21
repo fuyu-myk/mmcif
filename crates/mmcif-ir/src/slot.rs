@@ -7,6 +7,7 @@ use crate::error::IrError;
 use crate::ids::ResidueRef;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::len_without_is_empty)]
 pub struct AlphabetSet(BTreeSet<CompId>);
 
 impl AlphabetSet {
@@ -22,20 +23,12 @@ impl AlphabetSet {
         self.0.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        false
-    }
-
     pub fn contains(&self, component: &CompId) -> bool {
         self.0.contains(component)
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &CompId> {
         self.0.iter()
-    }
-
-    pub fn is_subset(&self, other: &AlphabetSet) -> bool {
-        self.0.is_subset(&other.0)
     }
 }
 
@@ -73,6 +66,7 @@ impl Identity {
     pub fn level(&self) -> Level {
         match self {
             Identity::Any => Level::Free,
+            Identity::OneOf(allowed) if allowed.len() == 1 => Level::Fixed,
             Identity::OneOf(_) => Level::Restricted,
             Identity::Exactly(_) => Level::Fixed,
         }
@@ -115,7 +109,7 @@ impl Slot {
         Slot::new(Identity::Exactly(component), Geometry::Anchored(anchor))
     }
 
-    pub fn determinacy(&self, constrained: bool) -> Determinacy {
+    pub(crate) fn determinacy(&self, constrained: bool) -> Determinacy {
         let geometry = match (&self.geometry, constrained) {
             (Geometry::Anchored(_), _) => Level::Fixed,
             (Geometry::Free, true) => Level::Restricted,
@@ -136,12 +130,14 @@ pub enum Level {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct Determinacy {
     pub identity: Level,
     pub geometry: Level,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Corner {
     DeNovo,
     FixedBackbone,
@@ -150,6 +146,10 @@ pub enum Corner {
 }
 
 impl Determinacy {
+    pub fn new(identity: Level, geometry: Level) -> Determinacy {
+        Determinacy { identity, geometry }
+    }
+
     pub fn corner(self) -> Option<Corner> {
         match (self.identity, self.geometry) {
             (Level::Free, Level::Free) => Some(Corner::DeNovo),
@@ -202,6 +202,13 @@ mod tests {
         assert_eq!(acidic.level(), Level::Restricted);
         assert!(acidic.allows(&comp("ASP")) && !acidic.allows(&comp("LYS")));
         assert_eq!(Identity::one_of([]), Err(IrError::EmptyAlphabet));
+    }
+
+    #[test]
+    fn a_hand_built_singleton_set_is_also_fixed() {
+        let singleton = Identity::OneOf(AlphabetSet::new([comp("ALA")]).unwrap());
+        assert_eq!(singleton.level(), Level::Fixed);
+        assert_eq!(singleton.level(), Identity::Exactly(comp("ALA")).level());
     }
 
     #[test]
@@ -267,6 +274,33 @@ mod tests {
         assert!(fixed_backbone < context);
         assert_eq!(fixed_backbone.partial_cmp(&flexible), None);
         assert_eq!(free.partial_cmp(&free), Some(Ordering::Equal));
+    }
+
+    #[test]
+    fn the_ordering_matches_the_componentwise_order_for_every_pair() {
+        let levels = [Level::Free, Level::Restricted, Level::Fixed];
+        for identity_left in levels {
+            for geometry_left in levels {
+                for identity_right in levels {
+                    for geometry_right in levels {
+                        let left = Determinacy::new(identity_left, geometry_left);
+                        let right = Determinacy::new(identity_right, geometry_right);
+                        let identity = identity_left.cmp(&identity_right);
+                        let geometry = geometry_left.cmp(&geometry_right);
+                        let expected = match (identity, geometry) {
+                            (Ordering::Equal, order) | (order, Ordering::Equal) => Some(order),
+                            (first, second) if first == second => Some(first),
+                            _ => None,
+                        };
+                        assert_eq!(left.partial_cmp(&right), expected, "{left:?} {right:?}");
+                        assert_eq!(
+                            left == right,
+                            left.partial_cmp(&right) == Some(Ordering::Equal)
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

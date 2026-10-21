@@ -65,18 +65,15 @@ fn a_de_novo_binder_sits_beside_a_fixed_target() {
 
     let instantiated = spec.instantiate(&Lengths::minimum(&spec)).unwrap();
     assert_eq!(instantiated.slot_count(), 12);
-    assert_eq!(
-        instantiated
-            .segment_slots(&SegmentId::new("target"))
-            .unwrap(),
-        0..4
-    );
-    assert_eq!(
-        instantiated
-            .segment_slots(&SegmentId::new("binder"))
-            .unwrap(),
-        4..12
-    );
+    let target = instantiated
+        .segment_slots(&SegmentId::new("target"))
+        .unwrap();
+    let binder = instantiated
+        .segment_slots(&SegmentId::new("binder"))
+        .unwrap();
+    assert_eq!((target.start().get(), target.len()), (0, 4));
+    assert_eq!((binder.start().get(), binder.len()), (4, 8));
+    assert!(binder.contains(SlotIndex::new(11)) && !binder.contains(SlotIndex::new(12)));
     let corners: Vec<Option<Corner>> = (0..instantiated.slot_count() as u32)
         .map(|index| {
             instantiated
@@ -403,14 +400,9 @@ fn a_token_layout_maps_only_the_slots_it_covers() {
     let binder = instantiated
         .segment_slots(&SegmentId::new("binder"))
         .unwrap();
-    let layout = TokenLayout::new(
-        instantiated.slot_count(),
-        binder.clone().map(|index| SlotIndex::new(index as u32)),
-    )
-    .unwrap();
+    let layout = TokenLayout::new(instantiated.slot_count(), binder.iter()).unwrap();
     assert_eq!(layout.token_count(), binder.len());
-    let first = SlotIndex::new(binder.start as u32);
-    assert_eq!(layout.token_for(first).unwrap().get(), 0);
+    assert_eq!(layout.token_for(binder.start()).unwrap().get(), 0);
     assert_eq!(
         layout.token_for(SlotIndex::new(0)),
         Err(IrError::SlotNotTokenized(SlotIndex::new(0)))
@@ -445,4 +437,158 @@ fn an_offset_past_the_instantiated_length_fails_at_instantiation() {
         long_enough.constraints()[0].slots(),
         [SlotIndex::new(0), SlotIndex::new(4)]
     );
+}
+
+#[test]
+fn symbolic_determinacy_follows_the_offset_the_constraint_names() {
+    let mut spec = Spec::new();
+    spec.push_segment(Segment::new(
+        SegmentId::new("binder"),
+        [Element::run(Slot::de_novo(), Length::exact(10).unwrap())],
+    ))
+    .unwrap();
+    spec.push_constraint(Constraint::<Symbolic>::Distance {
+        first: AtomAddress::new(at("binder", 0, 3), AtomName::new("CA")),
+        second: AtomAddress::new(at("binder", 0, 4), AtomName::new("CA")),
+        bounds: Bounds::at_most(8.0).unwrap(),
+    })
+    .unwrap();
+
+    assert_eq!(
+        spec.determinacy(&at("binder", 0, 3)).unwrap().geometry,
+        Level::Restricted
+    );
+    assert_eq!(
+        spec.determinacy(&at("binder", 0, 7)).unwrap().geometry,
+        Level::Free
+    );
+    assert!(matches!(
+        spec.determinacy(&address("binder", 0)),
+        Err(IrError::MixedDeterminacy { .. })
+    ));
+
+    let instantiated = spec.instantiate(&Lengths::minimum(&spec)).unwrap();
+    for index in 0..instantiated.slot_count() as u32 {
+        let index = SlotIndex::new(index);
+        let source = instantiated.source(index).unwrap();
+        assert_eq!(
+            spec.determinacy(&source).unwrap(),
+            instantiated.determinacy(index).unwrap()
+        );
+    }
+}
+
+#[test]
+fn a_constraint_over_a_whole_element_leaves_it_uniform() {
+    let mut spec = Spec::new();
+    spec.push_segment(Segment::new(
+        SegmentId::new("helix"),
+        [Element::run(Slot::de_novo(), Length::exact(6).unwrap())],
+    ))
+    .unwrap();
+    spec.push_constraint(Constraint::<Symbolic>::SecondaryStructure {
+        scope: Scope::Address(address("helix", 0)),
+        kind: SecondaryStructure::Helix,
+    })
+    .unwrap();
+    assert_eq!(
+        spec.determinacy(&address("helix", 0)).unwrap().geometry,
+        Level::Restricted
+    );
+    assert_eq!(
+        spec.determinacy(&at("helix", 0, 5)).unwrap().geometry,
+        Level::Restricted
+    );
+}
+
+#[test]
+fn length_choices_are_bound_to_the_spec_they_came_from() {
+    let make = |elements: Vec<Element>| {
+        let mut spec = Spec::new();
+        spec.push_segment(Segment::new(SegmentId::new("a"), elements))
+            .unwrap();
+        spec
+    };
+    let run = || Element::run(Slot::de_novo(), Length::range(2, 9).unwrap());
+    let fixed = || Element::Slot(Slot::de_novo());
+    let run_first = make(vec![run(), fixed()]);
+    let run_second = make(vec![fixed(), run()]);
+    let lengths = Lengths::new(&run_first, [5]).unwrap();
+    assert!(matches!(
+        run_second.instantiate(&lengths),
+        Err(IrError::LengthsFromAnotherSpec { .. })
+    ));
+    assert_eq!(run_first.instantiate(&lengths).unwrap().slot_count(), 6);
+}
+
+#[test]
+fn an_absurd_specification_is_refused_before_allocating() {
+    let mut spec = Spec::new();
+    spec.push_segment(Segment::new(
+        SegmentId::new("huge"),
+        [Element::run(
+            Slot::de_novo(),
+            Length::range(1, u32::MAX).unwrap(),
+        )],
+    ))
+    .unwrap();
+    assert_eq!(
+        spec.instantiate(&Lengths::maximum(&spec)),
+        Err(IrError::TooManySlots(mmcif_ir::MAX_SLOTS))
+    );
+    assert!(spec.instantiate(&Lengths::minimum(&spec)).is_ok());
+}
+
+#[test]
+fn a_singleton_restriction_reads_as_a_fixed_identity() {
+    let mut spec = Spec::new();
+    let one = Identity::OneOf(mmcif_ir::AlphabetSet::new([comp("ALA")]).unwrap());
+    spec.push_segment(Segment::new(
+        SegmentId::new("one"),
+        [Element::Slot(Slot::new(one, Geometry::Free))],
+    ))
+    .unwrap();
+    assert_eq!(
+        spec.determinacy(&address("one", 0)).unwrap().corner(),
+        Some(Corner::Flexible)
+    );
+}
+
+#[test]
+fn a_group_naming_the_same_slots_twice_resolves_them_once() {
+    let mut spec = Spec::new();
+    spec.push_segment(Segment::new(
+        SegmentId::new("loop"),
+        [
+            Element::run(Slot::de_novo(), Length::exact(3).unwrap()),
+            Element::Slot(Slot::de_novo()),
+        ],
+    ))
+    .unwrap();
+    spec.define_group(
+        GroupId::new("twice"),
+        [
+            address("loop", 0),
+            address("loop", 1),
+            address("loop", 0),
+            at("loop", 0, 1),
+        ],
+    )
+    .unwrap();
+    spec.push_constraint(Constraint::<Symbolic>::SecondaryStructure {
+        scope: Scope::Group(GroupId::new("twice")),
+        kind: SecondaryStructure::Strand,
+    })
+    .unwrap();
+
+    let instantiated = spec.instantiate(&Lengths::minimum(&spec)).unwrap();
+    let expected: Vec<SlotIndex> = (0..4).map(SlotIndex::new).collect();
+    assert_eq!(
+        instantiated.group(&GroupId::new("twice")).unwrap(),
+        expected
+    );
+    match &instantiated.constraints()[0] {
+        Constraint::SecondaryStructure { scope, .. } => assert_eq!(scope, &expected),
+        other => panic!("expected a secondary structure constraint, got {other:?}"),
+    }
 }

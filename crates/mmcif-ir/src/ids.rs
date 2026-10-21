@@ -99,6 +99,42 @@ impl fmt::Display for ResidueRef {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotSpan {
+    start: u32,
+    end: u32,
+}
+
+impl SlotSpan {
+    pub(crate) fn new(start: u32, end: u32) -> SlotSpan {
+        SlotSpan { start, end }
+    }
+
+    pub fn start(self) -> SlotIndex {
+        SlotIndex::new(self.start)
+    }
+
+    pub fn end(self) -> SlotIndex {
+        SlotIndex::new(self.end)
+    }
+
+    pub fn len(self) -> usize {
+        (self.end - self.start) as usize
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
+    pub fn contains(self, slot: SlotIndex) -> bool {
+        self.start <= slot.get() && slot.get() < self.end
+    }
+
+    pub fn iter(self) -> impl ExactSizeIterator<Item = SlotIndex> {
+        (self.start..self.end).map(SlotIndex::new)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TokenLayout {
     slots: Vec<Option<TokenIndex>>,
@@ -110,6 +146,9 @@ impl TokenLayout {
         slot_count: usize,
         order: impl IntoIterator<Item = SlotIndex>,
     ) -> Result<TokenLayout, IrError> {
+        if u32::try_from(slot_count).is_err() {
+            return Err(IrError::TooManySlots(u32::MAX));
+        }
         let mut slots = vec![None; slot_count];
         let mut tokens = Vec::new();
         for slot in order {
@@ -171,6 +210,26 @@ mod tests {
             let slot = layout.slot_for(token).unwrap();
             assert_eq!(layout.token_for(slot).unwrap(), token);
         }
+    }
+
+    #[test]
+    fn token_layout_rejects_an_unrepresentable_slot_count() {
+        assert_eq!(
+            TokenLayout::new(usize::MAX, []),
+            Err(IrError::TooManySlots(u32::MAX))
+        );
+    }
+
+    #[test]
+    fn slot_spans_iterate_and_contain_their_slots() {
+        let span = SlotSpan::new(2, 5);
+        assert_eq!(span.len(), 3);
+        assert!(!span.is_empty());
+        assert_eq!(span.start(), SlotIndex::new(2));
+        assert_eq!(span.end(), SlotIndex::new(5));
+        assert!(span.contains(SlotIndex::new(4)) && !span.contains(SlotIndex::new(5)));
+        assert_eq!(span.iter().count(), 3);
+        assert!(SlotSpan::new(2, 2).is_empty());
     }
 
     #[test]

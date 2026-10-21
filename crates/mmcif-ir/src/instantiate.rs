@@ -1,59 +1,94 @@
-use std::ops::Range;
-
 use crate::constraint::{AtomAddress, Constraint, Resolved, Scope, SymbolicAddress};
 use crate::error::IrError;
-use crate::ids::{ElementIndex, GroupId, SegmentId, SegmentIndex, SlotIndex};
+use crate::ids::{ElementIndex, GroupId, SegmentId, SegmentIndex, SlotIndex, SlotSpan};
+use crate::segment::Length;
 use crate::slot::{Determinacy, Slot};
 use crate::spec::Spec;
 
+pub const MAX_SLOTS: u32 = 1 << 24;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Choice {
+    segment: SegmentIndex,
+    element: ElementIndex,
+    count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lengths {
-    counts: Vec<u32>,
+    choices: Vec<Choice>,
 }
 
 impl Lengths {
     pub fn minimum(spec: &Spec) -> Lengths {
-        Lengths {
-            counts: spec
-                .symbolic_elements()
-                .map(|(_, _, length)| length.min())
-                .collect(),
-        }
+        Lengths::chosen(spec, Length::min)
     }
 
     pub fn maximum(spec: &Spec) -> Lengths {
+        Lengths::chosen(spec, Length::max)
+    }
+
+    fn chosen(spec: &Spec, pick: impl Fn(Length) -> u32) -> Lengths {
         Lengths {
-            counts: spec
+            choices: spec
                 .symbolic_elements()
-                .map(|(_, _, length)| length.max())
+                .map(|(segment, element, length)| Choice {
+                    segment,
+                    element,
+                    count: pick(length),
+                })
                 .collect(),
         }
     }
 
     pub fn new(spec: &Spec, counts: impl IntoIterator<Item = u32>) -> Result<Lengths, IrError> {
+        let counts: Vec<u32> = counts.into_iter().collect();
+        let expected = spec.symbolic_elements().count();
+        if counts.len() != expected {
+            return Err(IrError::LengthCountMismatch {
+                expected,
+                actual: counts.len(),
+            });
+        }
         let lengths = Lengths {
-            counts: counts.into_iter().collect(),
+            choices: spec
+                .symbolic_elements()
+                .zip(counts)
+                .map(|((segment, element, _), count)| Choice {
+                    segment,
+                    element,
+                    count,
+                })
+                .collect(),
         };
         lengths.check(spec)?;
         Ok(lengths)
     }
 
-    pub fn counts(&self) -> &[u32] {
-        &self.counts
+    pub fn counts(&self) -> Vec<u32> {
+        self.choices.iter().map(|choice| choice.count).collect()
     }
 
     fn check(&self, spec: &Spec) -> Result<(), IrError> {
         let expected = spec.symbolic_elements().count();
-        if self.counts.len() != expected {
+        if self.choices.len() != expected {
             return Err(IrError::LengthCountMismatch {
                 expected,
-                actual: self.counts.len(),
+                actual: self.choices.len(),
             });
         }
-        for (&chosen, (_, _, length)) in self.counts.iter().zip(spec.symbolic_elements()) {
-            if !length.contains(chosen) {
+        for (choice, (segment, element, length)) in
+            self.choices.iter().zip(spec.symbolic_elements())
+        {
+            if choice.segment != segment || choice.element != element {
+                return Err(IrError::LengthsFromAnotherSpec {
+                    expected: address_of(spec, segment, element),
+                    actual: address_of(spec, choice.segment, choice.element),
+                });
+            }
+            if !length.contains(choice.count) {
                 return Err(IrError::LengthOutOfRange {
-                    chosen,
+                    chosen: choice.count,
                     min: length.min(),
                     max: length.max(),
                 });
@@ -72,11 +107,20 @@ impl Lengths {
             .sum();
         fixed
             + self
-                .counts
+                .choices
                 .iter()
-                .map(|&count| u64::from(count))
+                .map(|choice| u64::from(choice.count))
                 .sum::<u64>()
     }
+}
+
+fn address_of(spec: &Spec, segment: SegmentIndex, element: ElementIndex) -> SymbolicAddress {
+    let id = spec
+        .segments()
+        .get(segment.as_usize())
+        .map(|segment| segment.id().clone())
+        .unwrap_or_else(|| SegmentId::new(segment.to_string()));
+    SymbolicAddress::whole(id, element)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,8 +135,8 @@ pub struct Instantiated {
     slots: Vec<Slot>,
     origins: Vec<Origin>,
     segment_ids: Vec<SegmentId>,
-    segment_slots: Vec<Range<u32>>,
-    element_slots: Vec<Vec<Range<u32>>>,
+    segment_slots: Vec<SlotSpan>,
+    element_slots: Vec<Vec<SlotSpan>>,
     groups: Vec<(GroupId, Vec<SlotIndex>)>,
     constraints: Vec<Constraint<Resolved>>,
     constrained: Vec<bool>,
@@ -102,22 +146,23 @@ impl Spec {
     pub fn instantiate(&self, lengths: &Lengths) -> Result<Instantiated, IrError> {
         lengths.check(self)?;
         let total = lengths.total_slots(self);
-        if total > u64::from(u32::MAX) {
-            return Err(IrError::TooManySlots(u32::MAX));
+        if total > u64::from(MAX_SLOTS) {
+            return Err(IrError::TooManySlots(MAX_SLOTS));
         }
         let mut slots = Vec::with_capacity(total as usize);
         let mut origins = Vec::with_capacity(total as usize);
         let mut element_slots = Vec::with_capacity(self.segments().len());
         let mut segment_slots = Vec::with_capacity(self.segments().len());
-        let mut choices = lengths.counts.iter();
+        let mut choices = lengths.choices.iter();
         for (segment_index, segment) in self.segments().iter().enumerate() {
             let segment_start = slots.len() as u32;
-            let mut ranges = Vec::with_capacity(segment.elements().len());
+            let mut spans = Vec::with_capacity(segment.elements().len());
             for (element_index, element) in segment.elements().iter().enumerate() {
                 let count = if element.is_symbolic() {
-                    *choices
+                    choices
                         .next()
                         .expect("lengths cover every symbolic element")
+                        .count
                 } else {
                     element.length().min()
                 };
@@ -130,10 +175,10 @@ impl Spec {
                         offset,
                     });
                 }
-                ranges.push(element_start..slots.len() as u32);
+                spans.push(SlotSpan::new(element_start, slots.len() as u32));
             }
-            element_slots.push(ranges);
-            segment_slots.push(segment_start..slots.len() as u32);
+            element_slots.push(spans);
+            segment_slots.push(SlotSpan::new(segment_start, slots.len() as u32));
         }
 
         let groups = self
@@ -182,20 +227,20 @@ fn sorted(mut slots: Vec<SlotIndex>) -> Vec<SlotIndex> {
 }
 
 fn resolve_within(
-    elements: &[Range<u32>],
+    elements: &[SlotSpan],
     address: &SymbolicAddress,
 ) -> Result<Vec<SlotIndex>, IrError> {
-    let range =
-        elements
-            .get(address.element.as_usize())
-            .ok_or_else(|| IrError::UnknownElement {
-                segment: address.segment.clone(),
-                element: address.element,
-            })?;
+    let span = elements
+        .get(address.element.as_usize())
+        .copied()
+        .ok_or_else(|| IrError::UnknownElement {
+            segment: address.segment.clone(),
+            element: address.element,
+        })?;
     match address.offset {
-        None => Ok((range.start..range.end).map(SlotIndex::new).collect()),
-        Some(offset) if offset < range.end - range.start => {
-            Ok(vec![SlotIndex::new(range.start + offset)])
+        None => Ok(span.iter().collect()),
+        Some(offset) if (offset as usize) < span.len() => {
+            Ok(vec![SlotIndex::new(span.start().get() + offset)])
         }
         Some(offset) => Err(IrError::OffsetOutOfRange {
             segment: address.segment.clone(),
@@ -207,7 +252,7 @@ fn resolve_within(
 
 fn resolve(
     spec: &Spec,
-    element_slots: &[Vec<Range<u32>>],
+    element_slots: &[Vec<SlotSpan>],
     address: &SymbolicAddress,
 ) -> Result<Vec<SlotIndex>, IrError> {
     let segment = spec.segment_index(&address.segment)?;
@@ -216,7 +261,7 @@ fn resolve(
 
 fn resolve_one(
     spec: &Spec,
-    element_slots: &[Vec<Range<u32>>],
+    element_slots: &[Vec<SlotSpan>],
     address: &SymbolicAddress,
 ) -> Result<SlotIndex, IrError> {
     let resolved = resolve(spec, element_slots, address)?;
@@ -232,7 +277,7 @@ fn resolve_one(
 
 fn resolve_constraint(
     spec: &Spec,
-    element_slots: &[Vec<Range<u32>>],
+    element_slots: &[Vec<SlotSpan>],
     groups: &[(GroupId, Vec<SlotIndex>)],
     constraint: &Constraint<crate::constraint::Symbolic>,
 ) -> Result<Constraint<Resolved>, IrError> {
@@ -308,14 +353,8 @@ impl Instantiated {
         &self.segment_ids
     }
 
-    pub fn segment_slots(&self, id: &SegmentId) -> Result<Range<usize>, IrError> {
-        let index = self
-            .segment_ids
-            .iter()
-            .position(|known| known == id)
-            .ok_or_else(|| IrError::UnknownSegment(id.clone()))?;
-        let range = &self.segment_slots[index];
-        Ok(range.start as usize..range.end as usize)
+    pub fn segment_slots(&self, id: &SegmentId) -> Result<SlotSpan, IrError> {
+        Ok(self.segment_slots[self.segment_position(id)?])
     }
 
     pub fn groups(&self) -> impl ExactSizeIterator<Item = (&GroupId, &[SlotIndex])> {
@@ -346,11 +385,14 @@ impl Instantiated {
     }
 
     pub fn resolve(&self, address: &SymbolicAddress) -> Result<Vec<SlotIndex>, IrError> {
-        let index = self
-            .segment_ids
+        let segment = self.segment_position(&address.segment)?;
+        resolve_within(&self.element_slots[segment], address)
+    }
+
+    fn segment_position(&self, id: &SegmentId) -> Result<usize, IrError> {
+        self.segment_ids
             .iter()
-            .position(|known| known == &address.segment)
-            .ok_or_else(|| IrError::UnknownSegment(address.segment.clone()))?;
-        resolve_within(&self.element_slots[index], address)
+            .position(|known| known == id)
+            .ok_or_else(|| IrError::UnknownSegment(id.clone()))
     }
 }

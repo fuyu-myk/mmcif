@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::constraint::{Constraint, Scope, Symbolic, SymbolicAddress};
 use crate::error::IrError;
 use crate::ids::{ElementIndex, GroupId, SegmentId, SegmentIndex};
@@ -125,25 +127,63 @@ impl Spec {
     pub fn determinacy(&self, address: &SymbolicAddress) -> Result<Determinacy, IrError> {
         self.check_address(address)?;
         let element = self.segment(&address.segment)?.element(address.element)?;
-        Ok(element
-            .slot()
-            .determinacy(self.touches(&address.segment, address.element)))
+        let constrained = self.constrained_at(address, element.length().max())?;
+        Ok(element.slot().determinacy(constrained))
     }
 
-    fn touches(&self, segment: &SegmentId, element: ElementIndex) -> bool {
-        let matches =
-            |address: &SymbolicAddress| &address.segment == segment && address.element == element;
-        self.constraints.iter().any(|constraint| match constraint {
-            Constraint::Distance { first, second, .. } => {
-                matches(&first.slot) || matches(&second.slot)
+    fn constrained_at(&self, address: &SymbolicAddress, slots: u32) -> Result<bool, IrError> {
+        let (whole, offsets) = self.constraint_extent(&address.segment, address.element);
+        match address.offset {
+            Some(offset) => Ok(whole || offsets.contains(&offset)),
+            None if whole || offsets.len() as u32 == slots => Ok(true),
+            None if offsets.is_empty() => Ok(false),
+            None => Err(IrError::MixedDeterminacy {
+                segment: address.segment.clone(),
+                element: address.element,
+            }),
+        }
+    }
+
+    fn constraint_extent(
+        &self,
+        segment: &SegmentId,
+        element: ElementIndex,
+    ) -> (bool, BTreeSet<u32>) {
+        let mut whole = false;
+        let mut offsets = BTreeSet::new();
+        for address in self.constraint_addresses() {
+            if &address.segment != segment || address.element != element {
+                continue;
             }
-            Constraint::SecondaryStructure { scope, .. } => match scope {
-                Scope::Address(address) => matches(address),
-                Scope::Group(id) => self
-                    .group(id)
-                    .is_ok_and(|members| members.iter().any(matches)),
-            },
-        })
+            match address.offset {
+                None => whole = true,
+                Some(offset) => {
+                    offsets.insert(offset);
+                }
+            }
+        }
+        (whole, offsets)
+    }
+
+    fn constraint_addresses(&self) -> Vec<&SymbolicAddress> {
+        let mut found = Vec::new();
+        for constraint in &self.constraints {
+            match constraint {
+                Constraint::Distance { first, second, .. } => {
+                    found.push(&first.slot);
+                    found.push(&second.slot);
+                }
+                Constraint::SecondaryStructure { scope, .. } => match scope {
+                    Scope::Address(address) => found.push(address),
+                    Scope::Group(id) => {
+                        if let Ok(members) = self.group(id) {
+                            found.extend(members.iter());
+                        }
+                    }
+                },
+            }
+        }
+        found
     }
 
     fn check_address(&self, address: &SymbolicAddress) -> Result<(), IrError> {

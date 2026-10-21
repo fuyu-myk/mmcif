@@ -12,9 +12,10 @@ pub use constraint::{
 };
 pub use error::IrError;
 pub use ids::{
-    ElementIndex, GroupId, ResidueRef, SegmentId, SegmentIndex, SlotIndex, TokenIndex, TokenLayout,
+    ElementIndex, GroupId, ResidueRef, SegmentId, SegmentIndex, SlotIndex, SlotSpan, TokenIndex,
+    TokenLayout,
 };
-pub use instantiate::{Instantiated, Lengths, Origin};
+pub use instantiate::{Instantiated, Lengths, MAX_SLOTS, Origin};
 pub use segment::{Element, Length, Segment};
 pub use slot::{AlphabetSet, Corner, Determinacy, Geometry, Identity, Level, Slot};
 pub use spec::Spec;
