@@ -1,0 +1,36 @@
+data_target
+#
+_entry.id target
+#
+loop_
+_entity.id
+_entity.type
+1 polymer
+2 polymer
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+ATOM 1 N N CYS A 1 1 -1.200 0.000 0.000 1.00 20.00 1 A
+ATOM 2 C CA CYS A 1 1 0.000 0.000 0.000 1.00 20.00 1 A
+ATOM 3 S SG CYS A 1 1 1.000 1.000 0.000 1.00 20.00 1 A
+ATOM 4 N N GLY A 1 2 2.600 0.000 0.000 1.00 20.00 2 A
+ATOM 5 C CA GLY A 1 2 3.800 0.000 0.000 1.00 20.00 2 A
+ATOM 6 N N GLY A 1 50 60.000 0.000 0.000 1.00 20.00 50 A
+ATOM 7 C CA GLY A 1 50 61.200 0.000 0.000 1.00 20.00 50 A
+ATOM 8 N N CYS A 1 51 63.800 0.000 0.000 1.00 20.00 51 A
+ATOM 9 C CA CYS A 1 51 65.000 0.000 0.000 1.00 20.00 51 A
+ATOM 10 S SG CYS A 1 51 64.000 1.000 0.000 1.00 20.00 51 A

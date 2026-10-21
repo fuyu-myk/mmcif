@@ -46,11 +46,15 @@ impl SegmentInfo {
                 .map(|element| (ElementIndex::new(element as u32), 0)),
             Addressing::Positional => {
                 let segment = spec.segment(&self.id).ok()?;
-                let mut seen = 0;
+                let index = u64::from(index);
+                let mut seen = 0u64;
                 for (position, element) in segment.elements().iter().enumerate() {
-                    let count = element.length().min();
+                    let count = u64::from(element.length().min());
                     if index <= seen + count {
-                        return Some((ElementIndex::new(position as u32), index - seen - 1));
+                        return Some((
+                            ElementIndex::new(position as u32),
+                            (index - seen - 1) as u32,
+                        ));
                     }
                     seen += count;
                 }
@@ -185,18 +189,30 @@ fn from_file(
     let index = lowered.targets.len();
     let target = &loaded;
 
-    let chains: Vec<&Selection> = match file.include.is_empty() {
-        false => file.include.iter().collect(),
-        true => Vec::new(),
-    };
-    let whole: Vec<Selection> = match chains.is_empty() {
+    let whole = match file.include.is_empty() {
+        true => every_chain(target, file.path.span),
         false => Vec::new(),
-        true => every_chain(target),
     };
-    let selections: Vec<&Selection> = match chains.is_empty() {
-        false => chains,
+    let selections: Vec<&Selection> = match file.include.is_empty() {
         true => whole.iter().collect(),
+        false => file.include.iter().collect(),
     };
+    let included: Vec<&str> = selections
+        .iter()
+        .map(|selection| selection.chain.value.as_str())
+        .collect();
+    for selection in &file.design {
+        if !included.contains(&selection.chain.value.as_str()) {
+            report.push(
+                Diagnostic::error(
+                    "unknown-chain",
+                    format!("chain {} is not included", selection.chain.value),
+                )
+                .at(source, selection.chain.span, "not part of this entity")
+                .help("a redesigned chain must also be included"),
+            );
+        }
+    }
 
     for selection in selections {
         let Some(residues) = resolve::chain(source, target, &selection.chain, report) else {
@@ -204,7 +220,6 @@ fn from_file(
         };
         let residues = resolve::select(
             source,
-            target,
             &selection.chain,
             residues,
             selection.residues.as_ref(),
@@ -250,7 +265,7 @@ fn from_file(
     }
 }
 
-fn every_chain(target: &Target) -> Vec<Selection> {
+fn every_chain(target: &Target, span: Span) -> Vec<Selection> {
     let Some(model) = target.structure.first_model() else {
         return Vec::new();
     };
@@ -258,8 +273,8 @@ fn every_chain(target: &Target) -> Vec<Selection> {
         .chains()
         .filter(|chain| chain.operators().is_empty())
         .map(|chain| Selection {
-            span: Span::new(0, 0),
-            chain: Spanned::new(Span::new(0, 0), chain.label_asym().as_str().to_string()),
+            span,
+            chain: Spanned::new(span, chain.label_asym().as_str().to_string()),
             residues: None,
         })
         .collect()
@@ -311,7 +326,16 @@ fn structure(
     report: &mut Report,
     groups: &mut usize,
 ) {
-    let Some(segment) = lowered.segment(&selection.chain.value).cloned() else {
+    let Lowered {
+        spec,
+        segments,
+        constraint_spans,
+        ..
+    } = lowered;
+    let Some(segment) = segments
+        .iter()
+        .find(|segment| segment.id.as_str() == selection.chain.value)
+    else {
         report.push(
             Diagnostic::error(
                 "unknown-chain",
@@ -332,8 +356,7 @@ fn structure(
             }
             let index = ElementIndex::new(position as u32);
             let address = SymbolicAddress::at(segment.id.clone(), index, 0);
-            if lowered
-                .spec
+            if spec
                 .segment(&segment.id)
                 .ok()
                 .and_then(|definition| definition.element(index).ok())
@@ -366,7 +389,7 @@ fn structure(
         }
         *groups += 1;
         let id = GroupId::new(format!("ss{groups}:{}", segment.id));
-        if let Err(error) = lowered.spec.define_group(id.clone(), members) {
+        if let Err(error) = spec.define_group(id.clone(), members) {
             report.push(ir_error(source, ranges.span, error));
             continue;
         }
@@ -374,8 +397,8 @@ fn structure(
             scope: Scope::Group(id),
             kind: *kind,
         };
-        match lowered.spec.push_constraint(constraint) {
-            Ok(()) => lowered.constraint_spans.push(ranges.span),
+        match spec.push_constraint(constraint) {
+            Ok(()) => constraint_spans.push(ranges.span),
             Err(error) => report.push(ir_error(source, ranges.span, error)),
         }
     }

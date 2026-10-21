@@ -88,16 +88,17 @@ struct MappingFrame {
 }
 
 pub fn parse(source: SourceId, text: &str) -> Result<Node, Diagnostic> {
+    let offsets = Offsets::of(text);
     let mut parser = Parser::new_from_str(text);
     let mut stack: Vec<Frame> = Vec::new();
     let mut document: Option<Node> = None;
 
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|error| {
-            let at = error.marker().index().min(text.len());
+            let at = offsets.byte(error.marker().index());
             Diagnostic::error("yaml-syntax", error.info().to_string()).at(
                 source,
-                Span::new(at, (at + 1).min(text.len())),
+                Span::new(at, offsets.byte(error.marker().index() + 1)),
                 "could not be parsed as YAML",
             )
         })?;
@@ -108,7 +109,7 @@ pub fn parse(source: SourceId, text: &str) -> Result<Node, Diagnostic> {
                     "yaml-multiple-documents",
                     "a specification holds one YAML document",
                 )
-                .at(source, at(span), "a second document starts here"));
+                .at(source, offsets.span(span), "a second document starts here"));
             }
             Event::DocumentStart(_) => {}
             Event::Alias(_) => {
@@ -116,40 +117,40 @@ pub fn parse(source: SourceId, text: &str) -> Result<Node, Diagnostic> {
                     "yaml-alias",
                     "YAML anchors and aliases are not supported",
                 )
-                .at(source, at(span), "an alias is used here")
+                .at(source, offsets.span(span), "an alias is used here")
                 .help("write the value out instead"));
             }
             Event::Scalar(text, _, anchor, _) => {
                 if anchor != 0 {
-                    return Err(anchor_unsupported(source, span));
+                    return Err(anchor_unsupported(source, &offsets, span));
                 }
                 let node = Node {
-                    span: at(span),
+                    span: offsets.span(span),
                     value: Value::Scalar(text.into_owned()),
                 };
                 place(&mut stack, &mut document, node, source)?;
             }
             Event::SequenceStart(anchor, _) => {
                 if anchor != 0 {
-                    return Err(anchor_unsupported(source, span));
+                    return Err(anchor_unsupported(source, &offsets, span));
                 }
                 stack.push(Frame::Sequence {
-                    start: span.start.index(),
+                    start: offsets.byte(span.start.index()),
                     items: Vec::new(),
                 });
             }
             Event::MappingStart(anchor, _) => {
                 if anchor != 0 {
-                    return Err(anchor_unsupported(source, span));
+                    return Err(anchor_unsupported(source, &offsets, span));
                 }
                 stack.push(Frame::Mapping(MappingFrame {
-                    start: span.start.index(),
+                    start: offsets.byte(span.start.index()),
                     entries: Vec::new(),
                     pending: None,
                 }));
             }
             Event::SequenceEnd | Event::MappingEnd => {
-                let node = close(stack.pop(), span);
+                let node = close(stack.pop(), &offsets, span);
                 place(&mut stack, &mut document, node, source)?;
             }
         }
@@ -164,30 +165,51 @@ pub fn parse(source: SourceId, text: &str) -> Result<Node, Diagnostic> {
     })
 }
 
-fn at(span: YamlSpan) -> Span {
-    Span::new(span.start.index(), span.end.index())
+struct Offsets(Vec<usize>);
+
+impl Offsets {
+    fn of(text: &str) -> Offsets {
+        Offsets(
+            text.char_indices()
+                .map(|(offset, _)| offset)
+                .chain([text.len()])
+                .collect(),
+        )
+    }
+
+    fn byte(&self, index: usize) -> usize {
+        self.0
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| self.0.last().copied().unwrap_or(0))
+    }
+
+    fn span(&self, span: YamlSpan) -> Span {
+        Span::new(self.byte(span.start.index()), self.byte(span.end.index()))
+    }
 }
 
-fn anchor_unsupported(source: SourceId, span: YamlSpan) -> Diagnostic {
+fn anchor_unsupported(source: SourceId, offsets: &Offsets, span: YamlSpan) -> Diagnostic {
     Diagnostic::error("yaml-alias", "YAML anchors and aliases are not supported")
-        .at(source, at(span), "an anchor is declared here")
+        .at(source, offsets.span(span), "an anchor is declared here")
         .help("write the value out instead")
 }
 
-fn close(frame: Option<Frame>, end: YamlSpan) -> Node {
+fn close(frame: Option<Frame>, offsets: &Offsets, end: YamlSpan) -> Node {
     match frame {
         None => Node {
-            span: at(end),
+            span: offsets.span(end),
             value: Value::Mapping(Mapping::default()),
         },
         Some(Frame::Sequence { start, items }) => Node {
-            span: cover(start, items.last().map(|item| item.span), end),
+            span: cover(start, items.last().map(|item| item.span), offsets, end),
             value: Value::Sequence(items),
         },
         Some(Frame::Mapping(frame)) => Node {
             span: cover(
                 frame.start,
                 frame.entries.last().map(|(_, value)| value.span),
+                offsets,
                 end,
             ),
             value: Value::Mapping(Mapping {
@@ -197,8 +219,10 @@ fn close(frame: Option<Frame>, end: YamlSpan) -> Node {
     }
 }
 
-fn cover(start: usize, last: Option<Span>, end: YamlSpan) -> Span {
-    let stop = last.map(Span::end).unwrap_or_else(|| end.end.index());
+fn cover(start: usize, last: Option<Span>, offsets: &Offsets, end: YamlSpan) -> Span {
+    let stop = last
+        .map(Span::end)
+        .unwrap_or_else(|| offsets.byte(end.end.index()));
     Span::new(start, stop)
 }
 
@@ -342,6 +366,24 @@ mod tests {
             load("? [a, b]\n: 1\n").unwrap_err().code,
             "yaml-complex-key"
         );
+    }
+
+    #[test]
+    fn spans_stay_on_byte_offsets_when_the_text_is_not_ascii() {
+        let text = "# \u{65e5}\u{672c}\u{8a9e}\nid: \u{00e9}x\n";
+        let document = load(text).unwrap();
+        let value = document.as_mapping().unwrap().get("id").unwrap();
+        assert_eq!(value.as_str(), Some("\u{00e9}x"));
+        assert_eq!(&text[value.span.start()..value.span.end()], "\u{00e9}x");
+    }
+
+    #[test]
+    fn a_syntax_error_after_multibyte_text_stays_inside_the_source() {
+        let text = "# \u{65e5}\u{65e5}\u{65e5}\nentities: [1, 2\n";
+        let error = load(text).unwrap_err();
+        assert_eq!(error.code, "yaml-syntax");
+        assert!(error.labels[0].span.end() <= text.len());
+        assert!(text.is_char_boundary(error.labels[0].span.start()));
     }
 
     #[test]

@@ -19,13 +19,6 @@ impl Span {
     pub fn end(self) -> usize {
         self.end
     }
-
-    pub fn merge(self, other: Span) -> Span {
-        Span {
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -64,12 +57,11 @@ impl SourceFile {
         &self.text
     }
 
-    pub fn line_count(&self) -> usize {
-        self.line_starts.len()
-    }
-
     pub fn location(&self, offset: usize) -> Location {
-        let offset = offset.min(self.text.len());
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
         let line = self
             .line_starts
             .partition_point(|start| *start <= offset)
@@ -82,14 +74,17 @@ impl SourceFile {
     }
 
     pub fn line_start(&self, line: usize) -> usize {
-        self.line_starts
-            .get(line.wrapping_sub(1))
+        line.checked_sub(1)
+            .and_then(|index| self.line_starts.get(index))
             .copied()
             .unwrap_or(self.text.len())
     }
 
     pub fn line(&self, line: usize) -> &str {
-        match self.line_starts.get(line.wrapping_sub(1)) {
+        match line
+            .checked_sub(1)
+            .and_then(|index| self.line_starts.get(index))
+        {
             None => "",
             Some(start) => {
                 let end = self
@@ -121,13 +116,6 @@ impl Sources {
     pub fn file(&self, id: SourceId) -> Option<&SourceFile> {
         self.files.get(id.0 as usize)
     }
-
-    pub fn named(&self, name: &str) -> Option<SourceId> {
-        self.files
-            .iter()
-            .position(|file| file.name() == name)
-            .map(|index| SourceId(index as u32))
-    }
 }
 
 #[cfg(test)]
@@ -141,7 +129,6 @@ mod tests {
         assert_eq!(file.location(10), Location { line: 2, column: 1 });
         assert_eq!(file.location(14), Location { line: 2, column: 5 });
         assert_eq!(file.line(2), "  - protein:");
-        assert_eq!(file.line_count(), 4);
     }
 
     #[test]
@@ -167,9 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn spans_merge_to_cover_both_ends() {
-        let merged = Span::new(10, 14).merge(Span::new(2, 5));
-        assert_eq!((merged.start(), merged.end()), (2, 14));
+    fn a_span_never_ends_before_it_starts() {
         assert_eq!(Span::new(9, 4).end(), 9);
     }
 
@@ -180,7 +165,5 @@ mod tests {
         let cif = sources.add("8r3a.cif", "data_8r3a");
         assert_eq!(sources.file(yaml).unwrap().name(), "design.yaml");
         assert_eq!(sources.file(cif).unwrap().text(), "data_8r3a");
-        assert_eq!(sources.named("8r3a.cif"), Some(cif));
-        assert_eq!(sources.named("missing.cif"), None);
     }
 }

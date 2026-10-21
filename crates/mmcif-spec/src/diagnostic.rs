@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 use crate::span::{SourceFile, SourceId, Sources, Span};
 
@@ -119,13 +119,18 @@ impl Report {
 impl Sources {
     pub fn render(&self, diagnostic: &Diagnostic) -> String {
         let mut out = String::new();
-        let _ = writeln!(
+        let _ = self.write(&mut out, diagnostic);
+        out
+    }
+
+    fn write(&self, out: &mut String, diagnostic: &Diagnostic) -> fmt::Result {
+        writeln!(
             out,
             "{}[{}]: {}",
             diagnostic.severity.as_str(),
             diagnostic.code,
             diagnostic.message
-        );
+        )?;
         let width = diagnostic
             .labels
             .iter()
@@ -137,16 +142,14 @@ impl Sources {
             .unwrap_or(1);
         for label in &diagnostic.labels {
             match self.file(label.source) {
-                None => {
-                    let _ = writeln!(out, "{:width$} = {}", "", label.message);
-                }
-                Some(file) => render_label(&mut out, file, label, width),
+                None => writeln!(out, "{:width$} = {}", "", label.message)?,
+                Some(file) => write_label(out, file, label, width)?,
             }
         }
         if let Some(help) = &diagnostic.help {
-            let _ = writeln!(out, "{:width$} = help: {help}", "");
+            writeln!(out, "{:width$} = help: {help}", "")?;
         }
-        out
+        Ok(())
     }
 
     pub fn render_all(&self, report: &Report) -> String {
@@ -159,20 +162,20 @@ impl Sources {
     }
 }
 
-fn render_label(out: &mut String, file: &SourceFile, label: &Label, width: usize) {
+fn write_label(out: &mut String, file: &SourceFile, label: &Label, width: usize) -> fmt::Result {
     let start = file.location(label.span.start());
     let text = file.line(start.line);
-    let _ = writeln!(
+    writeln!(
         out,
         "{:width$}--> {}:{}:{}",
         "",
         file.name(),
         start.line,
         start.column
-    );
-    let _ = writeln!(out, "{:width$} |", "");
-    let _ = writeln!(out, "{:width$} | {text}", start.line);
-    let _ = writeln!(
+    )?;
+    writeln!(out, "{:width$} |", "")?;
+    writeln!(out, "{:width$} | {text}", start.line)?;
+    writeln!(
         out,
         "{:width$} | {:column$}{} {}",
         "",
@@ -180,7 +183,7 @@ fn render_label(out: &mut String, file: &SourceFile, label: &Label, width: usize
         "^".repeat(caret_width(file, label.span, start.line)),
         label.message,
         column = start.column - 1
-    );
+    )
 }
 
 fn caret_width(file: &SourceFile, span: Span, line: usize) -> usize {

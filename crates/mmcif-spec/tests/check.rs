@@ -133,14 +133,16 @@ fn a_bond_between_distant_fixed_atoms_is_refused() {
         "      atom2: [A, 6, SG]\n",
     ));
     assert_eq!(checked.report.codes(), ["infeasible-geometry"]);
-    let rendered = checked.render();
-    assert!(
-        rendered.contains("needs at least 15.03 angstrom, allows at most 2.50"),
-        "{rendered}"
-    );
-    assert!(
-        rendered.contains("the structure file fixes slots 1 and 5 15.03 angstrom apart"),
-        "{rendered}"
+    assert_eq!(
+        checked.render(),
+        concat!(
+            "error[infeasible-geometry]: A 2 SG and A 6 SG cannot satisfy every constraint\n",
+            " --> design.yaml:8:5\n",
+            "  |\n",
+            "8 |   - bond:\n",
+            "  |     ^^^^^ needs at least 15.03 angstrom, allows at most 2.50\n",
+            "  = help: the structure file fixes them 15.03 angstrom apart\n",
+        )
     );
 }
 
@@ -464,6 +466,8 @@ fn two_bonds_that_are_fine_alone_can_still_contradict_each_other() {
         rendered.contains("needs at least 15.03 angstrom, allows at most 5.00"),
         "{rendered}"
     );
+    assert!(rendered.contains("A 2 SG and A 6 SG"), "{rendered}");
+    assert!(rendered.contains("--> design.yaml:11:5"), "{rendered}");
 }
 
 #[test]
@@ -481,4 +485,141 @@ fn a_length_range_whose_top_end_is_absurd_is_refused_cheaply() {
             .render()
             .contains("the longest sampled length is 20000000 slots")
     );
+}
+
+#[test]
+fn a_chain_break_does_not_make_local_bonds_infeasible() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: gapped.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "      design:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "            res_index: 2,50\n",
+        "constraints:\n",
+        "  - bond:\n",
+        "      atom1: [A, 1, SG]\n",
+        "      atom2: [A, 2, CA]\n",
+        "  - bond:\n",
+        "      atom1: [A, 51, SG]\n",
+        "      atom2: [A, 50, CA]\n",
+    ));
+    assert!(checked.report.is_empty(), "{}", checked.render());
+}
+
+#[test]
+fn atoms_from_different_files_are_not_measured_against_each_other() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "  - file:\n",
+        "      path: other.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: C\n",
+        "constraints:\n",
+        "  - bond:\n",
+        "      atom1: [A, 6, SG]\n",
+        "      atom2: [C, 1, SG]\n",
+    ));
+    assert!(checked.report.is_empty(), "{}", checked.render());
+}
+
+#[test]
+fn an_atom_cannot_be_bonded_to_itself() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "constraints:\n",
+        "  - bond:\n",
+        "      atom1: [A, 2, SG]\n",
+        "      atom2: [A, 2, SG]\n",
+    ));
+    assert_eq!(checked.report.codes(), ["self-reference"]);
+    assert_eq!(
+        checked.report.diagnostics()[0].message,
+        "A 2 SG cannot be constrained against itself"
+    );
+}
+
+#[test]
+fn redesigning_a_chain_that_is_not_included_is_refused() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "      design:\n",
+        "        - chain:\n",
+        "            id: Z\n",
+        "            res_index: 1..2\n",
+    ));
+    assert_eq!(checked.report.codes(), ["unknown-chain"]);
+    let rendered = checked.render();
+    assert!(rendered.contains("--> design.yaml:9:17"), "{rendered}");
+    assert!(rendered.contains("9 |             id: Z"), "{rendered}");
+}
+
+#[test]
+fn an_implicit_chain_points_at_the_file_it_came_from() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - protein:\n",
+        "      id: A\n",
+        "      sequence: 8\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+    ));
+    assert_eq!(checked.report.codes(), ["duplicate-chain"]);
+    let rendered = checked.render();
+    assert!(rendered.contains("--> design.yaml:6:13"), "{rendered}");
+}
+
+#[test]
+fn lengths_that_only_overflow_together_are_refused() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - protein:\n",
+        "      id: S\n",
+        "      sequence: 10000000\n",
+        "  - protein:\n",
+        "      id: T\n",
+        "      sequence: 10000000\n",
+    ));
+    assert_eq!(checked.report.codes(), ["unsatisfiable-lengths"]);
+    assert!(
+        checked
+            .render()
+            .contains("the longest sampled length is 20000000 slots")
+    );
+}
+
+#[test]
+fn a_specification_with_too_many_constrained_atoms_says_so() {
+    let mut yaml = String::from("entities:\n  - protein:\n      id: S\n      sequence: ");
+    yaml.push_str(&"C".repeat(400));
+    yaml.push_str("\nconstraints:\n");
+    for position in (1..400).step_by(2) {
+        yaml.push_str(&format!(
+            "  - bond:\n      atom1: [S, {position}, SG]\n      atom2: [S, {}, SG]\n",
+            position + 1
+        ));
+    }
+    let checked = check(&yaml);
+    assert_eq!(checked.report.codes(), ["geometry-not-checked"]);
+    assert!(!checked.has_errors());
 }

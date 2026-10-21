@@ -67,6 +67,7 @@ pub fn chain(
             .filter(|chain| chain.operators().is_empty())
             .map(|chain| chain.label_asym().as_str())
             .collect();
+        names.sort_unstable();
         names.dedup();
         report.push(
             Diagnostic::error(
@@ -100,7 +101,6 @@ fn polymer(residue: &ResidueRef<'_>) -> Option<Residue> {
 
 pub fn select(
     source: SourceId,
-    target: &Target,
     chain: &Spanned<String>,
     residues: Vec<Residue>,
     ranges: Option<&Spanned<Ranges>>,
@@ -109,6 +109,10 @@ pub fn select(
     let Some(ranges) = ranges else {
         return residues;
     };
+    let covered = residues
+        .first()
+        .zip(residues.last())
+        .map(|(first, last)| (first.seq.get(), last.seq.get()));
     let selected: Vec<Residue> = residues
         .into_iter()
         .filter(|residue| ranges.value.contains(residue.seq.get()))
@@ -120,21 +124,15 @@ pub fn select(
                 format!("no residue of chain {} is selected", chain.value),
             )
             .at(source, ranges.span, "selects nothing")
-            .help(available(source, target, chain).unwrap_or_else(|| "the chain is empty".into())),
+            .help(match covered {
+                Some((first, last)) => {
+                    format!("chain {} covers residues {first} to {last}", chain.value)
+                }
+                None => "the chain is empty".to_string(),
+            }),
         );
     }
     selected
-}
-
-fn available(source: SourceId, target: &Target, chain: &Spanned<String>) -> Option<String> {
-    let mut report = Report::new();
-    let residues = self::chain(source, target, chain, &mut report)?;
-    let first = residues.first()?.seq.get();
-    let last = residues.last()?.seq.get();
-    Some(format!(
-        "chain {} covers residues {first} to {last}",
-        chain.value
-    ))
 }
 
 pub fn atom_exists(target: &Target, key: &LabelResidueKey, atom: &str) -> Option<bool> {
@@ -263,14 +261,7 @@ ATOM 10 C CA ALA B 2 1 21.000 0.000 0.000 1 B
                 max: Some(3),
             }]),
         );
-        let selected = select(
-            source(),
-            &target,
-            &named("A"),
-            residues,
-            Some(&ranges),
-            &mut report,
-        );
+        let selected = select(source(), &named("A"), residues, Some(&ranges), &mut report);
         assert!(report.is_empty());
         assert_eq!(selected.len(), 2);
         assert_eq!(selected[0].seq.get(), 2);
@@ -288,14 +279,7 @@ ATOM 10 C CA ALA B 2 1 21.000 0.000 0.000 1 B
                 max: Some(95),
             }]),
         );
-        let selected = select(
-            source(),
-            &target,
-            &named("A"),
-            residues,
-            Some(&ranges),
-            &mut report,
-        );
+        let selected = select(source(), &named("A"), residues, Some(&ranges), &mut report);
         assert!(selected.is_empty());
         assert_eq!(report.codes(), ["empty-selection"]);
         assert_eq!(

@@ -1,10 +1,12 @@
 mod check;
 mod diagnostic;
 mod document;
+mod geometry;
 mod lower;
 mod read;
 mod resolve;
 mod sequence;
+mod shape;
 mod span;
 mod yaml;
 
