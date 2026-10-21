@@ -72,6 +72,11 @@ fn read_structures(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("text", id), path.as_path(), |b, path| {
             b.iter(|| read_text(black_box(path)))
         });
+        let binary = path.with_extension("bcif");
+        group.throughput(Throughput::Bytes(file_len(&binary)));
+        group.bench_with_input(BenchmarkId::new("bcif", id), binary.as_path(), |b, path| {
+            b.iter(|| read_binary(black_box(path)))
+        });
     }
     group.finish();
 }
