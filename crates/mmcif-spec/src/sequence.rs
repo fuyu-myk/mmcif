@@ -27,6 +27,21 @@ const ONE_LETTER: [(char, &str); 21] = [
     ('X', "UNK"),
 ];
 
+/// Returns the one-letter code of a standard amino acid component, or `None`
+/// for any other component.
+///
+/// `UNK` maps to `X`.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::CompId;
+/// use mmcif_spec::one_letter;
+///
+/// assert_eq!(one_letter(&CompId::new("TRP")), Some('W'));
+/// assert_eq!(one_letter(&CompId::new("UNK")), Some('X'));
+/// assert_eq!(one_letter(&CompId::new("HOH")), None);
+/// ```
 pub fn one_letter(component: &CompId) -> Option<char> {
     ONE_LETTER
         .iter()
@@ -34,6 +49,22 @@ pub fn one_letter(component: &CompId) -> Option<char> {
         .map(|(letter, _)| *letter)
 }
 
+/// Returns the standard amino acid component for an uppercase one-letter
+/// code, or `None` if `letter` is not one.
+///
+/// `X` maps to `UNK`.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::CompId;
+/// use mmcif_spec::component;
+///
+/// assert_eq!(component('C'), Some(CompId::new("CYS")));
+/// assert_eq!(component('X'), Some(CompId::new("UNK")));
+/// assert_eq!(component('B'), None);
+/// assert_eq!(component('c'), None);
+/// ```
 pub fn component(letter: char) -> Option<CompId> {
     ONE_LETTER
         .iter()

@@ -16,9 +16,39 @@ use crate::resolve::{self, Residue, Target};
 use crate::sequence::Token;
 use crate::span::{SourceId, Span};
 
+/// How a residue index in a specification picks a residue of a chain.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ir::SegmentId;
+/// use mmcif_spec::{Addressing, check_text};
+/// # let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+///
+/// let yaml = "\
+/// entities:
+///   - file:
+///       path: target.cif
+///       include:
+///         - chain:
+///             id: A
+///   - protein:
+///       id: S
+///       sequence: 10..14C6C3
+/// ";
+/// let checked = check_text("design.yaml", yaml, &base);
+/// let design = checked.design.as_ref().unwrap();
+///
+/// let addressing = |id: &str| design.segment(&SegmentId::new(id)).unwrap().kind.addressing();
+/// assert_eq!(addressing("A"), Addressing::Label);
+/// assert_eq!(addressing("S"), Addressing::Positional);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Addressing {
+    /// Indices count positions along the chain from 1, with every run of
+    /// designed residues at its minimum length.
     Positional,
+    /// Indices are the `label_seq_id` numbers of the structure file.
     Label,
 }
 
