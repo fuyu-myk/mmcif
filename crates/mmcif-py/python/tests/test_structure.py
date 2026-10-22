@@ -98,6 +98,16 @@ def test_entities_and_assemblies(structure):
         structure.assemble("1", model_index=5)
 
 
+def test_assembly_oligomeric_state_and_deposited_check(structure, crambin_bcif_path):
+    crambin = m.read(crambin_bcif_path).assemblies[0]
+    assert (crambin.oligomeric_details, crambin.oligomeric_count) == ("monomeric", 1)
+    assert [(a.oligomeric_details, a.oligomeric_count) for a in structure.assemblies] == [(None, None)] * 3
+    assert [structure.assembly_is_deposited(i) for i in ("1", "2", "3")] == [True, False, True]
+    assert structure.assembly_is_deposited("1", tolerance=0.0)
+    with pytest.raises(m.AssemblyError):
+        structure.assembly_is_deposited("9")
+
+
 def test_handles_outlive_their_structure(pathologies_path):
     structure = m.read(pathologies_path)
     atom = structure.models[0].chain("C").residues[0].atoms[0]

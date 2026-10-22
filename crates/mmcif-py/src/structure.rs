@@ -274,6 +274,8 @@ impl PyStructure {
             .map(|assembly| PyAssembly {
                 id: assembly.id().to_string(),
                 details: assembly.details().map(str::to_owned),
+                oligomeric_details: assembly.oligomeric_details().map(str::to_owned),
+                oligomeric_count: assembly.oligomeric_count(),
                 operator_count: assembly.operator_count(),
                 generators: assembly
                     .generators()
@@ -328,6 +330,35 @@ impl PyStructure {
         Ok(PyModel {
             inner: Arc::new(assembled),
         })
+    }
+
+    /// Return ``True`` if assembly ``assembly_id`` shows the deposited chains in
+    /// their deposited arrangement.
+    ///
+    /// That is, it places no chain more than once, and places every chain by the
+    /// same transform, to within ``tolerance`` in each rotation and translation
+    /// element. Such an assembly may hold fewer chains than the deposited model, or
+    /// move all of them together, but it shows nothing the deposited model does
+    /// not.
+    ///
+    /// Raises
+    /// ------
+    /// AssemblyError
+    ///     If the structure has no assembly ``assembly_id``, or it names an operator
+    ///     the structure does not define.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("example.cif")
+    /// >>> structure.assembly_is_deposited("1")
+    /// True
+    /// >>> structure.assembly_is_deposited("2")
+    /// False
+    #[pyo3(signature = (assembly_id, tolerance = 1e-3))]
+    fn assembly_is_deposited(&self, assembly_id: &str, tolerance: f64) -> PyResult<bool> {
+        self.inner
+            .assembly_is_deposited(&AssemblyId::new(assembly_id), tolerance)
+            .map_err(assembly_error)
     }
 
     /// Return the author address ``(chain, seq, ins_code)`` of the polymer residue
@@ -484,6 +515,8 @@ impl PyEntity {
 /// >>> assembly = mmcif_io.read("1crn.bcif").assemblies[0]
 /// >>> assembly.id, assembly.details
 /// ('1', 'author_defined_assembly')
+/// >>> assembly.oligomeric_details, assembly.oligomeric_count
+/// ('monomeric', 1)
 /// >>> assembly.generators
 /// [('1', ['A'])]
 #[pyclass(name = "Assembly", module = "mmcif_io", frozen, get_all)]
@@ -492,6 +525,12 @@ pub struct PyAssembly {
     id: String,
     /// The ``_pdbx_struct_assembly.details``, or ``None``.
     details: Option<String>,
+    /// The oligomeric state from ``_pdbx_struct_assembly.oligomeric_details``,
+    /// such as ``"dimeric"``, or ``None``.
+    oligomeric_details: Option<String>,
+    /// The number of polymer chains in the assembly from
+    /// ``_pdbx_struct_assembly.oligomeric_count``, or ``None``.
+    oligomeric_count: Option<u32>,
     /// The number of operator combinations across all generators.
     operator_count: usize,
     /// The ``(operator expression, label asym ids)`` pairs from

@@ -1,7 +1,7 @@
 use mmcif_model::{
     AltLoc, AltlocPolicy, AssemblyError, AssemblyId, AuthResidueKey, AuthSeqId, EntityKind,
-    InsCode, LabelResidueKey, LabelSeqId, ModelNumber, NumberingError, PolymerType, ReadError,
-    Structure, parse_mmcif, read_mmcif,
+    InsCode, LabelResidueKey, LabelSeqId, ModelNumber, NumberingError, OperatorId, PolymerType,
+    ReadError, Structure, parse_mmcif, read_mmcif,
 };
 
 const FIXTURE: &str = concat!(
@@ -301,6 +301,109 @@ fn expands_assemblies() {
         Err(AssemblyError::UnknownAssembly(AssemblyId::new("9")))
     );
     assert_eq!(structure.assemblies()[1].operator_count(), 2);
+}
+
+fn replaced(text: &str, from: &str, to: &str) -> String {
+    assert!(text.contains(from), "the fixture lacks {from:?}");
+    text.replace(from, to)
+}
+
+fn with_oligomers(rows: [&str; 3]) -> String {
+    let text = std::fs::read_to_string(FIXTURE).unwrap();
+    let text = replaced(
+        &text,
+        "_pdbx_struct_assembly.details\n",
+        "_pdbx_struct_assembly.details\n_pdbx_struct_assembly.oligomeric_details\n\
+         _pdbx_struct_assembly.oligomeric_count\n",
+    );
+    let text = replaced(
+        &text,
+        "1 author_defined_assembly\n",
+        &format!("1 author_defined_assembly {}\n", rows[0]),
+    );
+    let text = replaced(
+        &text,
+        "2 software_defined_assembly\n",
+        &format!("2 software_defined_assembly {}\n", rows[1]),
+    );
+    replaced(
+        &text,
+        "3 software_defined_assembly\n",
+        &format!("3 software_defined_assembly {}\n", rows[2]),
+    )
+}
+
+#[test]
+fn reads_oligomeric_details_and_counts() {
+    let annotated = parse_mmcif(&with_oligomers(["monomeric 1", "dimeric 2", "? ?"])).unwrap();
+    let assemblies = annotated.assemblies();
+    assert_eq!(assemblies[0].oligomeric_details(), Some("monomeric"));
+    assert_eq!(assemblies[0].oligomeric_count(), Some(1));
+    assert_eq!(assemblies[1].oligomeric_count(), Some(2));
+    assert_eq!(
+        (
+            assemblies[2].oligomeric_details(),
+            assemblies[2].oligomeric_count()
+        ),
+        (None, None)
+    );
+    let plain = structure();
+    let unannotated = &plain.assemblies()[0];
+    assert_eq!(
+        (
+            unannotated.oligomeric_details(),
+            unannotated.oligomeric_count()
+        ),
+        (None, None)
+    );
+
+    let error = parse_mmcif(&with_oligomers(["monomeric one", "dimeric 2", "? ?"])).unwrap_err();
+    assert!(matches!(
+        error,
+        ReadError::InvalidValue {
+            category: "pdbx_struct_assembly",
+            item: "oligomeric_count",
+            row: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn tells_whether_an_assembly_shows_the_deposited_arrangement() {
+    let structure = structure();
+    let deposited = |id: &str| structure.assembly_is_deposited(&AssemblyId::new(id), 1e-3);
+    assert_eq!(deposited("1"), Ok(true));
+    assert_eq!(deposited("2"), Ok(false));
+    assert_eq!(deposited("3"), Ok(true));
+    assert_eq!(
+        deposited("9"),
+        Err(AssemblyError::UnknownAssembly(AssemblyId::new("9")))
+    );
+}
+
+#[test]
+fn a_deposited_assembly_may_span_several_generators() {
+    let text = std::fs::read_to_string(FIXTURE).unwrap();
+    let deposited = |text: &str| {
+        parse_mmcif(text)
+            .unwrap()
+            .assembly_is_deposited(&AssemblyId::new("1"), 1e-3)
+    };
+    let split = replaced(&text, "1 1 AA,B,C,D\n", "1 1 AA,B\n1 1 C,D\n");
+    assert_eq!(deposited(&split), Ok(true));
+    let rearranged = replaced(&text, "1 1 AA,B,C,D\n", "1 1 AA,B\n1 2 C,D\n");
+    assert_eq!(deposited(&rearranged), Ok(false));
+    let copied = replaced(&text, "1 1 AA,B,C,D\n", "1 1 AA,B,C,D\n1 1 AA\n");
+    assert_eq!(deposited(&copied), Ok(false));
+    let undefined = replaced(&text, "1 1 AA,B,C,D\n", "1 7 AA,B,C,D\n");
+    assert_eq!(
+        deposited(&undefined),
+        Err(AssemblyError::UnknownOperator {
+            assembly: AssemblyId::new("1"),
+            operator: OperatorId::new("7"),
+        })
+    );
 }
 
 fn with_atom_site(rows: &str) -> String {

@@ -105,10 +105,14 @@ impl Transform {
     /// assert!(!nearly.is_identity(0.0));
     /// ```
     pub fn is_identity(&self, tolerance: f64) -> bool {
+        self.is_close_to(&Transform::IDENTITY, tolerance)
+    }
+
+    fn is_close_to(&self, other: &Transform, tolerance: f64) -> bool {
         let close = |a: f64, b: f64| (a - b).abs() <= tolerance;
         (0..3).all(|i| {
-            close(self.translation[i], 0.0)
-                && (0..3).all(|j| close(self.rotation[i][j], if i == j { 1.0 } else { 0.0 }))
+            close(self.translation[i], other.translation[i])
+                && (0..3).all(|j| close(self.rotation[i][j], other.rotation[i][j]))
         })
     }
 }
@@ -245,15 +249,19 @@ impl Generator {
 pub struct Assembly {
     pub(crate) id: AssemblyId,
     pub(crate) details: Option<String>,
+    pub(crate) oligomeric_details: Option<String>,
+    pub(crate) oligomeric_count: Option<u32>,
     pub(crate) generators: Vec<Generator>,
 }
 
 impl Assembly {
-    /// Creates an assembly with no details.
+    /// Creates an assembly with no details and no oligomeric state.
     pub fn new(id: AssemblyId, generators: Vec<Generator>) -> Self {
         Assembly {
             id,
             details: None,
+            oligomeric_details: None,
+            oligomeric_count: None,
             generators,
         }
     }
@@ -267,6 +275,19 @@ impl Assembly {
     /// file gives one.
     pub fn details(&self) -> Option<&str> {
         self.details.as_deref()
+    }
+
+    /// Returns the oligomeric state from
+    /// `_pdbx_struct_assembly.oligomeric_details`, such as `dimeric`, if the
+    /// file gives one.
+    pub fn oligomeric_details(&self) -> Option<&str> {
+        self.oligomeric_details.as_deref()
+    }
+
+    /// Returns the number of polymer chains in the assembly from
+    /// `_pdbx_struct_assembly.oligomeric_count`, if the file gives one.
+    pub fn oligomeric_count(&self) -> Option<u32> {
+        self.oligomeric_count
     }
 
     /// Returns the generators, in file order.
@@ -367,27 +388,10 @@ impl Structure {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn assemble(&self, id: &AssemblyId, model: &Model) -> Result<Model, AssemblyError> {
-        let assembly = self
-            .assembly(id)
-            .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
-        let operators: HashMap<&str, &Operator> = self
-            .operators
-            .iter()
-            .map(|operator| (operator.id.as_str(), operator))
-            .collect();
+        let (assembly, operators) = self.resolved_assembly(id)?;
         let mut plans = Vec::with_capacity(assembly.generators.len());
         let mut total_atoms: u64 = 0;
         for generator in &assembly.generators {
-            if let Some(missing) = generator
-                .operators
-                .operator_ids()
-                .find(|operator| !operators.contains_key(operator.as_str()))
-            {
-                return Err(AssemblyError::UnknownOperator {
-                    assembly: id.clone(),
-                    operator: missing,
-                });
-            }
             let wanted: HashSet<&LabelAsymId> = generator.asym_ids.iter().collect();
             let selected: Vec<ChainRef<'_>> = model
                 .chains()
@@ -418,6 +422,83 @@ impl Structure {
             }
         }
         Ok(builder.finish())
+    }
+}
+
+impl Structure {
+    /// Returns `true` if assembly `id` shows the deposited chains in their
+    /// deposited arrangement: it places no chain more than once, and places
+    /// every chain by the same transform, to within `tolerance` in each
+    /// rotation and translation element. Such an assembly may hold fewer
+    /// chains than the deposited model, or move all of them together, but it
+    /// shows nothing the deposited model does not.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssemblyError::UnknownAssembly`] if the structure has no
+    /// assembly `id`, and [`AssemblyError::UnknownOperator`] if a generator
+    /// names an operator that is not in [`Structure::operators`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::AssemblyId;
+    ///
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// // Assembly 1 applies the identity to every chain.
+    /// assert_eq!(structure.assembly_is_deposited(&AssemblyId::new("1"), 1e-3), Ok(true));
+    /// // Assembly 2 places chains AA and C twice, by operators 1 and 2.
+    /// assert_eq!(structure.assembly_is_deposited(&AssemblyId::new("2"), 1e-3), Ok(false));
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
+    pub fn assembly_is_deposited(
+        &self,
+        id: &AssemblyId,
+        tolerance: f64,
+    ) -> Result<bool, AssemblyError> {
+        let (assembly, operators) = self.resolved_assembly(id)?;
+        let mut placed: HashSet<&LabelAsymId> = HashSet::new();
+        let mut first: Option<Transform> = None;
+        for generator in &assembly.generators {
+            for combination in generator.operators.combinations() {
+                let transform = combined_transform(&operators, &combination);
+                match &first {
+                    Some(first) if !transform.is_close_to(first, tolerance) => return Ok(false),
+                    Some(_) => {}
+                    None => first = Some(transform),
+                }
+                if !generator.asym_ids.iter().all(|asym| placed.insert(asym)) {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn resolved_assembly(
+        &self,
+        id: &AssemblyId,
+    ) -> Result<(&Assembly, HashMap<&str, &Operator>), AssemblyError> {
+        let assembly = self
+            .assembly(id)
+            .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
+        let operators: HashMap<&str, &Operator> = self
+            .operators
+            .iter()
+            .map(|operator| (operator.id.as_str(), operator))
+            .collect();
+        if let Some(missing) = assembly
+            .generators
+            .iter()
+            .flat_map(|generator| generator.operators.operator_ids())
+            .find(|operator| !operators.contains_key(operator.as_str()))
+        {
+            return Err(AssemblyError::UnknownOperator {
+                assembly: id.clone(),
+                operator: missing,
+            });
+        }
+        Ok((assembly, operators))
     }
 }
 

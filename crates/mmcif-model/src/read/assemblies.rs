@@ -51,10 +51,14 @@ pub(crate) fn read_assemblies(block: &Block<'_>) -> Result<Vec<Assembly>, ReadEr
     if let Some(table) = Table::optional(block, "pdbx_struct_assembly") {
         let ids = table.required_column("id")?;
         let details = table.column("details");
+        let oligomeric_details = table.column("oligomeric_details");
+        let oligomeric_counts = table.column("oligomeric_count");
         for row in 0..table.rows() {
             assemblies.push(Assembly {
                 id: AssemblyId::new(ids.required_text(row)?),
                 details: details.text(row).map(str::to_owned),
+                oligomeric_details: oligomeric_details.text(row).map(str::to_owned),
+                oligomeric_count: oligomeric_counts.parse(row)?,
                 generators: Vec::new(),
             });
         }
