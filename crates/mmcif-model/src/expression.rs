@@ -3,10 +3,24 @@ use crate::ids::OperatorId;
 const MAX_COMBINATIONS: u64 = 1 << 20;
 const MAX_GROUPS: usize = 8;
 
+/// An error from parsing an operator expression with
+/// [`OperatorExpression::parse`].
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::OperatorExpression;
+///
+/// let error = OperatorExpression::parse("(3-1)").unwrap_err();
+/// assert_eq!(error.expression, "(3-1)");
+/// assert_eq!(error.reason, "descending operator range");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid operator expression {expression:?}: {reason}")]
 pub struct InvalidExpression {
+    /// The expression as given.
     pub expression: String,
+    /// A short description of the problem.
     pub reason: &'static str,
 }
 
@@ -71,6 +85,27 @@ impl Group {
     }
 }
 
+/// A parsed `_pdbx_struct_assembly_gen.oper_expression`.
+///
+/// An expression is either one group, such as `1,2,5` or `1-60`, or a
+/// sequence of parenthesised groups, such as `(X0)(1-60)`. Each combination
+/// takes one operator from every group.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::OperatorExpression;
+///
+/// let expression = OperatorExpression::parse("(1-2)(5,6)")?;
+/// assert_eq!(expression.len(), 4);
+///
+/// let combinations: Vec<String> = expression
+///     .combinations()
+///     .map(|ids| ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join("x"))
+///     .collect();
+/// assert_eq!(combinations, ["1x5", "1x6", "2x5", "2x6"]);
+/// # Ok::<(), mmcif_model::InvalidExpression>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperatorExpression {
     groups: Vec<Group>,
@@ -78,6 +113,32 @@ pub struct OperatorExpression {
 }
 
 impl OperatorExpression {
+    /// Parses an operator expression.
+    ///
+    /// Whitespace is ignored. Items within a group are separated by commas.
+    /// An item of two unsigned integers joined by `-` is an inclusive range
+    /// of operator ids, and any other item is a single operator id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidExpression`] if the parentheses are unbalanced or
+    /// nested, text lies outside the parentheses of a parenthesised
+    /// expression, an item is empty, a range is descending, there are more
+    /// than 8 groups, or the expression has more than 2^20 combinations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::OperatorExpression;
+    ///
+    /// assert_eq!(OperatorExpression::parse("1, 2, 5")?.len(), 3);
+    /// assert_eq!(OperatorExpression::parse("(1-60)(61-88)")?.len(), 60 * 28);
+    ///
+    /// assert!(OperatorExpression::parse("").is_err());
+    /// assert!(OperatorExpression::parse("1,,2").is_err());
+    /// assert!(OperatorExpression::parse("(1)2").is_err());
+    /// # Ok::<(), mmcif_model::InvalidExpression>(())
+    /// ```
     pub fn parse(expression: &str) -> Result<OperatorExpression, InvalidExpression> {
         let invalid = |reason| InvalidExpression {
             expression: expression.to_owned(),
@@ -116,20 +177,55 @@ impl OperatorExpression {
         Ok(OperatorExpression { groups, len })
     }
 
+    /// Returns the number of operator combinations.
     pub fn len(&self) -> usize {
         self.len as usize
     }
 
+    /// Returns `true` if the expression has no operator combinations.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    /// Returns every operator id the expression names, group by group, with
+    /// ranges expanded.
+    ///
+    /// An id named in more than one group is returned once per group.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::OperatorExpression;
+    ///
+    /// let expression = OperatorExpression::parse("(X0)(1-2,P)")?;
+    /// let ids: Vec<String> = expression.operator_ids().map(|id| id.to_string()).collect();
+    /// assert_eq!(ids, ["X0", "1", "2", "P"]);
+    /// # Ok::<(), mmcif_model::InvalidExpression>(())
+    /// ```
     pub fn operator_ids(&self) -> impl Iterator<Item = OperatorId> + '_ {
         self.groups
             .iter()
             .flat_map(|group| (0..group.len).map(move |index| group.get(index)))
     }
 
+    /// Returns every combination of one operator from each group, as ids in
+    /// group order.
+    ///
+    /// The combinations vary the last group fastest.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::OperatorExpression;
+    ///
+    /// let expression = OperatorExpression::parse("(X0)(1-2)")?;
+    /// let combinations: Vec<Vec<String>> = expression
+    ///     .combinations()
+    ///     .map(|ids| ids.iter().map(|id| id.to_string()).collect())
+    ///     .collect();
+    /// assert_eq!(combinations, [["X0", "1"], ["X0", "2"]]);
+    /// # Ok::<(), mmcif_model::InvalidExpression>(())
+    /// ```
     pub fn combinations(&self) -> impl ExactSizeIterator<Item = Vec<OperatorId>> + '_ {
         (0..self.len as usize).map(move |index| {
             let mut rest = index as u64;

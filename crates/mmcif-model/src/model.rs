@@ -8,18 +8,62 @@ use crate::ids::{
 use crate::key::{AuthResidueKey, ResidueKey};
 use crate::view::{AtomRef, ChainRef, ResidueRef};
 
+/// The position of a chain within its [`Model`], from [`ChainRef::index`].
+///
+/// # Examples
+///
+/// ```
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let model = structure.first_model().unwrap();
+/// let index = model.chain("B").unwrap().index();
+///
+/// assert_eq!(index.get(), 1);
+/// assert_eq!(model.chain_at(index).unwrap().label_asym().as_str(), "B");
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ChainIndex(pub(crate) u32);
 
+/// The position of a residue within its [`Model`], from
+/// [`ResidueRef::index`].
+///
+/// # Examples
+///
+/// ```
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let model = structure.first_model().unwrap();
+/// let index = model.chain("C").unwrap().residues().next().unwrap().index();
+///
+/// assert_eq!(index.get(), 7);
+/// assert_eq!(model.residue_at(index).unwrap().comp().as_str(), "ZN");
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ResidueIndex(pub(crate) u32);
 
+/// The position of an atom within its [`Model`], from [`AtomRef::index`].
+///
+/// Atom indices also index the per-atom columns of a model, such as
+/// [`Model::positions`].
+///
+/// # Examples
+///
+/// ```
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let model = structure.first_model().unwrap();
+/// let zinc = model.chain("C").unwrap().atoms().next().unwrap();
+///
+/// assert_eq!(zinc.index().get(), 13);
+/// assert_eq!(model.positions()[zinc.index().get()], [0.0, 0.0, 5.0]);
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AtomIndex(pub(crate) u32);
 
 macro_rules! index_accessors {
     ($($name:ident),*) => {
         $(impl $name {
+            /// Returns the index as a `usize`.
             pub fn get(self) -> usize {
                 self.0 as usize
             }
@@ -67,6 +111,29 @@ pub(crate) struct AtomColumns {
     pub residues: Vec<u32>,
 }
 
+/// One model of a structure, holding its chains, residues and atoms.
+///
+/// Residues are grouped by chain and atoms by residue: each chain and each
+/// residue covers a contiguous range of atom indices. Per-atom values are
+/// also available as columns indexed by atom index, such as
+/// [`Model::positions`].
+///
+/// # Examples
+///
+/// ```
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let model = structure.first_model().unwrap();
+///
+/// assert_eq!(model.number().get(), 1);
+/// assert_eq!(model.chain_count(), 4);
+/// assert_eq!(model.residue_count(), 10);
+/// assert_eq!(model.atom_count(), 16);
+///
+/// let zinc = model.chain("C").unwrap();
+/// assert_eq!(zinc.atom_range(), 13..14);
+/// assert_eq!(model.b_factors()[13], 30.0);
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Model {
     pub(crate) number: ModelNumber,
@@ -76,51 +143,103 @@ pub struct Model {
 }
 
 impl Model {
+    /// Returns the model number.
     pub fn number(&self) -> ModelNumber {
         self.number
     }
 
+    /// Returns the number of chains.
     pub fn chain_count(&self) -> usize {
         self.chains.len()
     }
 
+    /// Returns the number of residues.
     pub fn residue_count(&self) -> usize {
         self.residues.len()
     }
 
+    /// Returns the number of atoms.
     pub fn atom_count(&self) -> usize {
         self.atoms.positions.len()
     }
 
+    /// Returns an iterator over the chains, in index order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    ///
+    /// let labels: Vec<&str> = model.chains().map(|chain| chain.label_asym().as_str()).collect();
+    /// assert_eq!(labels, ["AA", "B", "C", "D"]);
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn chains(&self) -> impl ExactSizeIterator<Item = ChainRef<'_>> {
         (0..self.chains.len() as u32).map(move |index| ChainRef::new(self, index))
     }
 
+    /// Returns an iterator over every residue, in index order.
     pub fn residues(&self) -> impl ExactSizeIterator<Item = ResidueRef<'_>> {
         (0..self.residues.len() as u32).map(move |index| ResidueRef::new(self, index))
     }
 
+    /// Returns an iterator over every atom, in index order.
     pub fn atoms(&self) -> impl ExactSizeIterator<Item = AtomRef<'_>> {
         (0..self.atom_count() as u32).map(move |index| AtomRef::new(self, index))
     }
 
+    /// Returns the chain at `index`, or `None` if `index` is out of range.
     pub fn chain_at(&self, index: ChainIndex) -> Option<ChainRef<'_>> {
         (index.get() < self.chains.len()).then(|| ChainRef::new(self, index.0))
     }
 
+    /// Returns the residue at `index`, or `None` if `index` is out of range.
     pub fn residue_at(&self, index: ResidueIndex) -> Option<ResidueRef<'_>> {
         (index.get() < self.residues.len()).then(|| ResidueRef::new(self, index.0))
     }
 
+    /// Returns the atom at `index`, or `None` if `index` is out of range.
     pub fn atom_at(&self, index: AtomIndex) -> Option<AtomRef<'_>> {
         (index.get() < self.atom_count()).then(|| AtomRef::new(self, index.0))
     }
 
+    /// Returns the chain with label id `label_asym` that has no operators
+    /// applied, or `None` if there is none.
+    ///
+    /// Every chain of a model built by [`Structure::assemble`] has operators
+    /// applied.
+    ///
+    /// [`Structure::assemble`]: crate::Structure::assemble
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    ///
+    /// let waters = model.chain("D").unwrap();
+    /// assert_eq!(waters.residue_count(), 2);
+    /// assert!(model.chain("H1").is_none());
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn chain(&self, label_asym: &str) -> Option<ChainRef<'_>> {
         self.chains()
             .find(|chain| chain.operators().is_empty() && chain.label_asym().as_str() == label_asym)
     }
 
+    /// Returns the chains with author chain id `auth_asym`, in index order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    ///
+    /// let labels: Vec<&str> = model.auth_chain("H1").map(|chain| chain.label_asym().as_str()).collect();
+    /// assert_eq!(labels, ["AA", "B", "C", "D"]);
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn auth_chain<'a, 'k>(
         &'a self,
         auth_asym: &'k str,
@@ -129,12 +248,45 @@ impl Model {
             .filter(move |chain| chain.auth_asym().as_str() == auth_asym)
     }
 
+    /// Returns the residues at author address `key`, in index order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::{AuthResidueKey, AuthSeqId, InsCode};
+    ///
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    /// let key = AuthResidueKey {
+    ///     chain: "H1".into(),
+    ///     seq: AuthSeqId::new(100),
+    ///     ins_code: InsCode::NONE,
+    /// };
+    ///
+    /// let comps: Vec<&str> = model.residues_at(&key).iter().map(|residue| residue.comp().as_str()).collect();
+    /// assert_eq!(comps, ["SER", "THR"]);
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn residues_at(&self, key: &AuthResidueKey) -> Vec<ResidueRef<'_>> {
         self.auth_chain(key.chain.as_str())
             .flat_map(|chain| chain.residues_at_auth(key.seq, key.ins_code))
             .collect()
     }
 
+    /// Returns the residue that matches every field of `key` in the chain
+    /// [`Model::chain`] returns for `key.asym`, or `None` if there is none.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    ///
+    /// for residue in model.residues() {
+    ///     assert_eq!(model.residue(&residue.key()), Some(residue));
+    /// }
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn residue(&self, key: &ResidueKey) -> Option<ResidueRef<'_>> {
         self.chain(key.asym.as_str())?.residues().find(|residue| {
             residue.label_seq() == key.label_seq
@@ -144,34 +296,44 @@ impl Model {
         })
     }
 
+    /// Returns the Cartesian coordinates of every atom, by atom index.
     pub fn positions(&self) -> &[[f64; 3]] {
         &self.atoms.positions
     }
 
+    /// Returns the element of every atom, by atom index.
     pub fn elements(&self) -> &[Element] {
         &self.atoms.elements
     }
 
+    /// Returns the alternate location indicator of every atom, by atom index.
     pub fn altlocs(&self) -> &[AltLoc] {
         &self.atoms.altlocs
     }
 
+    /// Returns the occupancy of every atom, by atom index.
     pub fn occupancies(&self) -> &[f64] {
         &self.atoms.occupancies
     }
 
+    /// Returns the isotropic B-factor of every atom, by atom index.
     pub fn b_factors(&self) -> &[f64] {
         &self.atoms.b_factors
     }
 
+    /// Returns the formal charge of every atom, by atom index, with `None`
+    /// where the file gives none.
     pub fn charges(&self) -> &[Option<i8>] {
         &self.atoms.charges
     }
 
+    /// Returns the serial number of every atom, by atom index, with `None`
+    /// where the file gives none.
     pub fn serials(&self) -> &[Option<i64>] {
         &self.atoms.serials
     }
 
+    /// Returns the residue index of every atom, by atom index.
     pub fn atom_residue_indices(&self) -> &[u32] {
         &self.atoms.residues
     }

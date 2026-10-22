@@ -464,6 +464,56 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
     numbering
 }
 
+/// Parses a structure from PDB text.
+///
+/// `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER` and `HEADER` records are read,
+/// other records are skipped, and reading stops at `END`. Atoms before the
+/// first `MODEL` record form model 1, and models without atoms are dropped.
+/// The entry id comes from columns 63 to 66 of `HEADER`.
+///
+/// Each author chain is split into label chains. `TER` records divide an
+/// author chain into runs, and a run with `ATOM` records is a polymer that
+/// holds the run's residues up to its last `ATOM` record, or all of them if
+/// a `TER` record ends the run. The water residues (`HOH`, `WAT`, `DOD` and
+/// `H2O`) of an author chain form one chain, and every other residue forms a
+/// chain of its own. Label chains are ordered polymers first, then other
+/// residues, then waters, each in order of first appearance, and are named
+/// `A` to `Z`, then `AA`, `BA` and so on.
+///
+/// Entities are built from the first model and hold only an id, a type and
+/// their chains. Polymer chains with the same sequence of components share an
+/// entity, as do non-polymer chains with the same component, and all water
+/// chains share one. Entity ids count up from `1` in chain order, and the
+/// chains of later models take the entity of the first model's chain with
+/// the same label id. Residues have no label residue number, and the
+/// structure has no operators or assemblies.
+///
+/// A blank element is inferred from the atom name, a blank occupancy reads
+/// as 1 and a blank B-factor as 0. Serial and residue numbers may use the
+/// hybrid-36 encoding.
+///
+/// # Errors
+///
+/// Returns [`ReadError::Pdb`] with the line number if a coordinate,
+/// occupancy, B-factor, serial number, residue number, formal charge or
+/// model number cannot be read, if an element is invalid or cannot be
+/// inferred, or if a record has non-ASCII text in its fixed columns.
+///
+/// # Examples
+///
+/// ```
+/// # let text = include_str!("../tests/fixtures/legacy.pdb");
+/// let structure = mmcif_model::parse_pdb(text)?;
+/// let model = structure.first_model().unwrap();
+///
+/// let chains: Vec<String> = model
+///     .chains()
+///     .map(|chain| format!("{}:{}", chain.label_asym(), chain.auth_asym()))
+///     .collect();
+/// assert_eq!(chains, ["A:A", "B:B", "C:A", "D:A", "E:A", "F:B"]);
+/// assert_eq!(structure.entities()[0].kind().as_mmcif_str(), "polymer");
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
     let mut entry_id = None;
     let mut finished: Vec<PdbModel> = Vec::new();
@@ -530,6 +580,23 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
     })
 }
 
+/// Reads a structure from a PDB file.
+///
+/// See [`parse_pdb`] for how the file is read.
+///
+/// # Errors
+///
+/// Returns [`ReadError::Cif`] if the file cannot be read, and
+/// [`ReadError::Pdb`] if it is not valid UTF-8 or if [`parse_pdb`] fails.
+///
+/// # Examples
+///
+/// ```
+/// let structure = mmcif_model::read_pdb("tests/fixtures/legacy.pdb")?;
+/// assert_eq!(structure.entry_id(), Some("1ABC"));
+/// assert_eq!(structure.models().len(), 2);
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 pub fn read_pdb(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
     let bytes = std::fs::read(path).map_err(mmcif_cif::Error::from)?;
     let text = String::from_utf8(bytes).map_err(|error| {

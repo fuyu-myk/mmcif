@@ -2,10 +2,30 @@ use std::fmt;
 
 use crate::ids::{AuthAsymId, AuthSeqId, CompId, InsCode, LabelAsymId, LabelSeqId};
 
+/// A residue address in author numbering: author chain, residue number and
+/// insertion code.
+///
+/// It displays as `chain:number` followed by the insertion code, if any.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::{AuthResidueKey, AuthSeqId, InsCode};
+///
+/// let key = AuthResidueKey {
+///     chain: "H".into(),
+///     seq: AuthSeqId::new(100),
+///     ins_code: InsCode::new('A'),
+/// };
+/// assert_eq!(key.to_string(), "H:100A");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AuthResidueKey {
+    /// The author chain id.
     pub chain: AuthAsymId,
+    /// The author residue number.
     pub seq: AuthSeqId,
+    /// The insertion code.
     pub ins_code: InsCode,
 }
 
@@ -15,9 +35,27 @@ impl fmt::Display for AuthResidueKey {
     }
 }
 
+/// A polymer residue address in label numbering: label chain and label
+/// residue number.
+///
+/// It displays as `chain/number`.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::{LabelResidueKey, LabelSeqId};
+///
+/// let key = LabelResidueKey {
+///     asym: "B".into(),
+///     seq: LabelSeqId::new(105).unwrap(),
+/// };
+/// assert_eq!(key.to_string(), "B/105");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LabelResidueKey {
+    /// The label chain id.
     pub asym: LabelAsymId,
+    /// The label residue number.
     pub seq: LabelSeqId,
 }
 
@@ -27,12 +65,38 @@ impl fmt::Display for LabelResidueKey {
     }
 }
 
+/// The full address of a residue in a model: label chain, label and author
+/// residue numbers, insertion code and component.
+///
+/// It displays as `chain/label/author/component`, with `.` for a missing
+/// label number and the insertion code after the author number.
+///
+/// # Examples
+///
+/// ```
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let model = structure.first_model().unwrap();
+///
+/// let alanine = model.chain("AA").unwrap().residues().nth(2).unwrap();
+/// let key = alanine.key();
+/// assert_eq!(key.to_string(), "AA/3/100A/ALA");
+/// assert_eq!(model.residue(&key), Some(alanine));
+///
+/// let sugar = model.chain("B").unwrap().residues().next().unwrap();
+/// assert_eq!(sugar.key().to_string(), "B/./1/NAG");
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ResidueKey {
+    /// The label chain id.
     pub asym: LabelAsymId,
+    /// The label residue number, if the residue has one.
     pub label_seq: Option<LabelSeqId>,
+    /// The author residue number.
     pub auth_seq: AuthSeqId,
+    /// The insertion code.
     pub ins_code: InsCode,
+    /// The chemical component id.
     pub comp: CompId,
 }
 

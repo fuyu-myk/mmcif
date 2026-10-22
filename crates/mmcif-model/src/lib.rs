@@ -1,3 +1,36 @@
+//! A typed model of macromolecular structures read from mmCIF, BinaryCIF and
+//! PDB files.
+//!
+//! A [`Structure`] holds the models, entities, assemblies and residue
+//! numbering of one entry. Each [`Model`] holds chains, residues and atoms,
+//! reached through the [`ChainRef`], [`ResidueRef`] and [`AtomRef`] views.
+//! Author addresses ([`AuthResidueKey`]) and label addresses
+//! ([`LabelResidueKey`]) are separate types, converted with [`Numbering`].
+//!
+//! # Examples
+//!
+//! ```
+//! use mmcif_model::{AuthResidueKey, AuthSeqId, InsCode};
+//!
+//! # let text = include_str!("../tests/fixtures/pathologies.cif");
+//! let structure = mmcif_model::parse_mmcif(text)?;
+//! let model = structure.first_model().unwrap();
+//!
+//! let chain = model.chain("AA").unwrap();
+//! assert_eq!(chain.auth_asym().as_str(), "H1");
+//! assert_eq!(chain.residue_count(), 5);
+//!
+//! let key = AuthResidueKey {
+//!     chain: "H1".into(),
+//!     seq: AuthSeqId::new(100),
+//!     ins_code: InsCode::new('A'),
+//! };
+//! assert_eq!(structure.numbering().to_label(&key)?.to_string(), "AA/3");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
+#![warn(missing_docs)]
+
 mod altloc;
 mod assembly;
 mod branch;

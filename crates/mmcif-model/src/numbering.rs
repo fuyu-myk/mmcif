@@ -3,30 +3,72 @@ use std::collections::{HashMap, HashSet};
 use crate::ids::{AuthAsymId, LabelAsymId};
 use crate::key::{AuthResidueKey, LabelResidueKey};
 
+/// An error from converting between label and author numbering with
+/// [`Numbering`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum NumberingError {
+    /// No chain has this label chain id.
     #[error("no chain with label_asym_id {0}")]
     UnknownLabelChain(LabelAsymId),
+    /// No chain has this author chain id.
     #[error("no chain with auth_asym_id {0}")]
     UnknownAuthChain(AuthAsymId),
+    /// The label chain exists but has no polymer position with this number.
     #[error("{0} is not a position in its polymer sequence")]
     NotInSequence(LabelResidueKey),
+    /// The author address belongs to a residue outside any polymer.
     #[error("{0} is not a polymer residue and has no label_seq_id")]
     NotPolymer(AuthResidueKey),
+    /// The author chain exists but has no residue at this address.
     #[error("no residue at {0}")]
     NotFound(AuthResidueKey),
+    /// The author address belongs to a polymer residue in a file with no
+    /// label numbering.
     #[error("{0} is a polymer residue but the file carries no label numbering")]
     Unnumbered(AuthResidueKey),
+    /// The file gives no author numbering for this label position.
     #[error("{0} has no author numbering in this file")]
     NoAuthorNumbering(LabelResidueKey),
+    /// The author address maps to more than one label position.
     #[error("{key} maps to {} label positions", candidates.len())]
     Ambiguous {
+        /// The author address.
         key: AuthResidueKey,
+        /// Every label position the address maps to, in the order read.
         candidates: Vec<LabelResidueKey>,
     },
 }
 
+/// The mapping between the label and author residue numbering of a
+/// structure.
+///
+/// For mmCIF it is read from `_pdbx_poly_seq_scheme`, `_pdbx_branch_scheme`
+/// and the residues of the first model. When a label position is given more
+/// than once, the first author address read for it is kept. The residues of
+/// a PDB file have author addresses only.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::{AuthResidueKey, AuthSeqId, InsCode, LabelResidueKey, LabelSeqId};
+///
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let numbering = structure.numbering();
+///
+/// let label = LabelResidueKey {
+///     asym: "AA".into(),
+///     seq: LabelSeqId::new(3).unwrap(),
+/// };
+/// let auth = AuthResidueKey {
+///     chain: "H1".into(),
+///     seq: AuthSeqId::new(100),
+///     ins_code: InsCode::new('A'),
+/// };
+/// assert_eq!(numbering.to_auth(&label)?, auth);
+/// assert_eq!(numbering.to_label(&auth)?, label);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Numbering {
     label_to_auth: HashMap<LabelResidueKey, AuthResidueKey>,
@@ -75,10 +117,58 @@ impl Numbering {
         self.branch.insert((asym, num), auth);
     }
 
+    /// Returns the author address of monomer `num` of branched label chain
+    /// `asym`, from `_pdbx_branch_scheme`, or `None` if the file gives none.
+    ///
+    /// The insertion code of the address is always [`InsCode::NONE`].
+    ///
+    /// [`InsCode::NONE`]: crate::InsCode::NONE
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let numbering = structure.numbering();
+    ///
+    /// let auth = numbering.branch_to_auth(&"B".into(), 2).unwrap();
+    /// assert_eq!(auth.to_string(), "H1:2");
+    /// assert!(numbering.branch_to_auth(&"B".into(), 3).is_none());
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn branch_to_auth(&self, asym: &LabelAsymId, num: u32) -> Option<&AuthResidueKey> {
         self.branch.get(&(asym.clone(), num))
     }
 
+    /// Returns the author address of the polymer residue at label position
+    /// `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NumberingError::NoAuthorNumbering`] if the file gives no
+    /// author numbering for `key`, [`NumberingError::NotInSequence`] if the
+    /// label chain exists but has no polymer position at `key`, and
+    /// [`NumberingError::UnknownLabelChain`] if no chain has the label chain
+    /// id of `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::{LabelResidueKey, LabelSeqId, NumberingError};
+    ///
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let numbering = structure.numbering();
+    /// let label = |seq| LabelResidueKey {
+    ///     asym: "AA".into(),
+    ///     seq: LabelSeqId::new(seq).unwrap(),
+    /// };
+    ///
+    /// assert_eq!(numbering.to_auth(&label(1))?.to_string(), "H1:99");
+    /// assert_eq!(
+    ///     numbering.to_auth(&label(7)),
+    ///     Err(NumberingError::NotInSequence(label(7)))
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn to_auth(&self, key: &LabelResidueKey) -> Result<AuthResidueKey, NumberingError> {
         if let Some(auth) = self.label_to_auth.get(key) {
             return Ok(auth.clone());
@@ -92,6 +182,39 @@ impl Numbering {
         }
     }
 
+    /// Returns the label position of the polymer residue at author address
+    /// `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NumberingError::Ambiguous`] if `key` maps to more than one
+    /// label position, [`NumberingError::NotPolymer`] if `key` belongs to a
+    /// residue outside any polymer, [`NumberingError::Unnumbered`] if `key`
+    /// belongs to a polymer residue in a file with no label numbering, such
+    /// as a PDB file, [`NumberingError::NotFound`] if the author chain exists
+    /// but has no residue at `key`, and [`NumberingError::UnknownAuthChain`]
+    /// if no chain has the author chain id of `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::{AuthResidueKey, AuthSeqId, InsCode, NumberingError};
+    ///
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let numbering = structure.numbering();
+    /// let auth = |seq| AuthResidueKey {
+    ///     chain: "H1".into(),
+    ///     seq: AuthSeqId::new(seq),
+    ///     ins_code: InsCode::NONE,
+    /// };
+    ///
+    /// assert_eq!(numbering.to_label(&auth(101))?.to_string(), "AA/4");
+    /// assert_eq!(
+    ///     numbering.to_label(&auth(201)),
+    ///     Err(NumberingError::NotPolymer(auth(201)))
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn to_label(&self, key: &AuthResidueKey) -> Result<LabelResidueKey, NumberingError> {
         match self.auth_to_label.get(key).map(Vec::as_slice) {
             Some([single]) => Ok(single.clone()),
@@ -108,6 +231,21 @@ impl Numbering {
         }
     }
 
+    /// Returns every label position with an author address, paired with that
+    /// address, in no particular order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let numbering = structure.numbering();
+    ///
+    /// assert_eq!(numbering.polymer_positions().count(), 6);
+    /// for (label, auth) in numbering.polymer_positions() {
+    ///     assert_eq!(numbering.to_auth(label).as_ref(), Ok(auth));
+    /// }
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
     pub fn polymer_positions(&self) -> impl Iterator<Item = (&LabelResidueKey, &AuthResidueKey)> {
         self.label_to_auth.iter()
     }
