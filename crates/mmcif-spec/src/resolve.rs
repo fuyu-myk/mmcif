@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use mmcif_model::{LabelResidueKey, LabelSeqId, ResidueRef, Structure};
+use mmcif_model::{LabelResidueKey, LabelSeqId, Model, ResidueRef, Structure};
 
 use crate::diagnostic::{Diagnostic, Report};
 use crate::document::{Ranges, Spanned};
@@ -64,20 +64,13 @@ pub fn chain(
         None
     })?;
     let Some(found) = model.chain(&chain.value) else {
-        let mut names: Vec<&str> = model
-            .chains()
-            .filter(|chain| chain.operators().is_empty())
-            .map(|chain| chain.label_asym().as_str())
-            .collect();
-        names.sort_unstable();
-        names.dedup();
         report.push(
             Diagnostic::error(
                 "unknown-chain",
                 format!("{} has no chain {}", display(&target.path), chain.value),
             )
             .at(source, chain.span, "not in the target")
-            .help(format!("chains in the file: {}", names.join(", "))),
+            .help(chain_help(model, &chain.value)),
         );
         return None;
     };
@@ -87,6 +80,68 @@ pub fn chain(
             .filter_map(|residue| polymer(&residue))
             .collect(),
     )
+}
+
+pub fn empty_chain(source: SourceId, target: &Target, chain: &Spanned<String>) -> Diagnostic {
+    let model = target.structure.first_model();
+    let mut held: Vec<&str> = model
+        .and_then(|model| model.chain(&chain.value))
+        .map(|found| {
+            found
+                .residues()
+                .map(|residue| residue.comp().as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    held.sort_unstable();
+    held.dedup();
+    held.truncate(5);
+    let diagnostic = Diagnostic::error(
+        "no-polymer-residues",
+        format!(
+            "chain {} in {} has no polymer residues",
+            chain.value,
+            display(&target.path)
+        ),
+    )
+    .at(source, chain.span, format!("it holds {}", held.join(", ")));
+    match model {
+        Some(model) => diagnostic.help(chain_help(model, &chain.value)),
+        None => diagnostic,
+    }
+}
+
+fn chain_help(model: &Model, id: &str) -> String {
+    let polymers = format!(
+        "polymer chains in the file: {}",
+        polymer_chains(model, None).join(", ")
+    );
+    let authored = polymer_chains(model, Some(id));
+    match authored.as_slice() {
+        [] => polymers,
+        [one] => format!("author chain {id} is label chain {one}; {polymers}"),
+        many => format!(
+            "author chain {id} is label chains {}; {polymers}",
+            many.join(", ")
+        ),
+    }
+}
+
+fn polymer_chains<'a>(model: &'a Model, author: Option<&str>) -> Vec<&'a str> {
+    let mut names: Vec<&str> = model
+        .chains()
+        .filter(|chain| chain.operators().is_empty())
+        .filter(|chain| author.is_none_or(|id| chain.auth_asym().as_str() == id))
+        .filter(|chain| {
+            chain
+                .residues()
+                .any(|residue| residue.label_seq().is_some())
+        })
+        .map(|chain| chain.label_asym().as_str())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 fn polymer(residue: &ResidueRef<'_>) -> Option<Residue> {
@@ -248,7 +303,7 @@ ATOM 10 C CA ALA B 2 1 21.000 0.000 0.000 1 B
         assert_eq!(report.codes(), ["unknown-chain"]);
         assert_eq!(
             report.diagnostics()[0].help.as_deref(),
-            Some("chains in the file: A, B")
+            Some("polymer chains in the file: A, B")
         );
     }
 

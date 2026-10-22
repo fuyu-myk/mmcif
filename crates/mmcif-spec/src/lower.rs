@@ -199,10 +199,17 @@ fn from_file(
         }
     }
 
+    let explicit = !file.include.is_empty();
     for selection in selections {
         let Some(residues) = resolve::chain(source, target, &selection.chain, report) else {
             continue;
         };
+        if residues.is_empty() {
+            if explicit {
+                report.push(resolve::empty_chain(source, target, &selection.chain));
+            }
+            continue;
+        }
         let residues = resolve::select(
             source,
             &selection.chain,

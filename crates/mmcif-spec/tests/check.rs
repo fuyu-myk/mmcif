@@ -670,3 +670,74 @@ fn a_redesigned_chain_without_an_index_is_redesigned_whole() {
         );
     }
 }
+
+fn aliased(chain: &str) -> Checked {
+    check(&format!(
+        concat!(
+            "entities:\n",
+            "  - file:\n",
+            "      path: aliased.cif\n",
+            "      include:\n",
+            "        - chain:\n",
+            "            id: {}\n",
+        ),
+        chain
+    ))
+}
+
+#[test]
+fn a_named_chain_with_no_polymer_residues_is_not_dropped_silently() {
+    let checked = aliased("H");
+    assert_eq!(checked.report.codes(), ["no-polymer-residues"]);
+    assert!(checked.has_errors());
+    let rendered = checked.render();
+    assert!(
+        rendered.contains("chain H in aliased.cif has no polymer residues"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("it holds HOH"), "{rendered}");
+}
+
+#[test]
+fn an_author_chain_id_points_at_its_label_chain() {
+    let checked = aliased("H");
+    assert_eq!(
+        checked.report.diagnostics()[0].help.as_deref(),
+        Some("author chain H is label chain B; polymer chains in the file: A, B")
+    );
+}
+
+#[test]
+fn an_unknown_chain_suggests_the_label_id_of_a_matching_author_chain() {
+    let checked = aliased("L");
+    assert_eq!(checked.report.codes(), ["unknown-chain"]);
+    assert_eq!(
+        checked.report.diagnostics()[0].help.as_deref(),
+        Some("author chain L is label chain A; polymer chains in the file: A, B")
+    );
+}
+
+#[test]
+fn an_unknown_chain_with_no_author_match_lists_only_polymer_chains() {
+    let checked = aliased("Z");
+    assert_eq!(checked.report.codes(), ["unknown-chain"]);
+    assert_eq!(
+        checked.report.diagnostics()[0].help.as_deref(),
+        Some("polymer chains in the file: A, B")
+    );
+}
+
+#[test]
+fn a_whole_file_include_still_skips_water_without_complaint() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: aliased.cif\n",
+    ));
+    assert!(checked.report.is_empty(), "{}", checked.render());
+    let shortest = checked.shortest.unwrap();
+    assert_eq!(
+        shortest.segment_ids(),
+        [SegmentId::new("A"), SegmentId::new("B")]
+    );
+}
