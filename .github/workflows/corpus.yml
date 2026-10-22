@@ -1,0 +1,37 @@
+name: corpus
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space for the 7 GB corpus
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv harness/.venv
+      - run: uv pip install --python harness/.venv/bin/python -r harness/requirements.txt
+      - run: python3 corpus/fetch.py --workers 4
+      - run: python3 corpus/fetch.py --corpus corpus/full.json --set full --workers 4 --allow-changed
+      - run: cargo test --release -p mmcif-cif -p mmcif-model --test corpus -- --ignored
+      - run: harness/.venv/bin/python harness/run.py --corpus full
+      - if: always()
+        run: harness/.venv/bin/python harness/report.py --output harness/out/REPORT.md
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-results
+          path: harness/out
+          if-no-files-found: warn
+      - name: Every file matches its pin in corpus/full.json
+        run: python3 corpus/fetch.py --corpus corpus/full.json --set full

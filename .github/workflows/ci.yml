@@ -62,15 +62,15 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: corpus/data
-          key: corpus-${{ hashFiles('corpus/candidates.toml') }}
+          key: corpus-pathology-${{ hashFiles('corpus/candidates.toml', 'corpus/full.json') }}
       - run: uv venv harness/.venv
       - run: uv pip install --python harness/.venv/bin/python -r harness/requirements.txt
       - run: harness/.venv/bin/python -m unittest discover -s corpus -p "test_*.py"
       - run: harness/.venv/bin/python -m unittest discover -s harness -p "test_*.py"
       - run: harness/.venv/bin/python corpus/fetch.py
+      - run: harness/.venv/bin/python corpus/fetch.py --corpus corpus/full.json --set pathology --workers 4 --allow-changed
       - run: cargo test --release -p mmcif-cif -p mmcif-model --test corpus -- --ignored
-      - run: cargo build --release -p mmcif-dump
-      - run: harness/.venv/bin/python harness/run.py
+      - run: harness/.venv/bin/python harness/run.py --corpus pathology
 
   dictionary:
     if: github.event_name == 'schedule'
