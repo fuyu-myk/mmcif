@@ -56,14 +56,24 @@ Checked on 21 October 2026 against gemmi 0.7.5 and pdbtbx 0.12.0. gemmi is the b
 
 ## Correctness
 
-Every push to main and every pull request runs the same entries through this project and gemmi, comparing atom counts, coordinates, occupancies, B-factors, residue keys, label numbering, entities and expanded assemblies. Any difference without a written explanation fails the build.
+Every push to main and every pull request runs 313 PDB entries through this project and gemmi: 44 picked by hand, plus the hardest entries found for each of eight cases that trip parsers up (insertion codes, alternate conformations, microheterogeneity, numbering divergence, assembly operators, branched entities, multi-character chain ids and multiple models). It compares atom counts, coordinates, occupancies, B-factors, residue keys, label numbering, entities and expanded assemblies, and compares each entry's BinaryCIF reading with its CIF reading. Any difference without a written explanation fails the build.
 
-The corpus covers insertion codes, alternate conformations, microheterogeneity, numbering divergence, assembly operators, branched entities, multi-character chain ids and multiple models, plus a baseline set: 44 entries today. All 44 agree with gemmi except in assembly expansion on two entries, where 4,872 differences are each explained by a rule in [`harness/explained.toml`](https://github.com/fuyu-myk/mmcif/blob/main/harness/explained.toml). To reproduce:
+Every week the full corpus runs too: those entries plus 3,000 drawn at random from the PDB with a fixed seed, 3,105 in all. 3,091 agree with gemmi exactly. The other 14 differ in two ways, both explained in the [comparison report](https://github.com/fuyu-myk/mmcif/blob/main/corpus/REPORT.md): gemmi drops assemblies whose description it does not recognise and expands composite operator expressions only in part, and one integrative model gives no B-factors, which gemmi reads as 20.0 and this project as 0.0. No entry's BinaryCIF reading differs from its CIF reading.
+
+To check the 44 hand-picked entries:
 
 ```bash
 pip install -r harness/requirements.txt
 python corpus/fetch.py
 python harness/run.py
+```
+
+To check the full corpus, a 7 GB download that takes about half an hour, and render the report:
+
+```bash
+python corpus/fetch.py --corpus corpus/full.json --set full --workers 4
+python harness/run.py --corpus full
+python harness/report.py
 ```
 
 For every corpus entry, writing a parsed document and parsing it again gives the same document. The CIF tokenizer, the BinaryCIF decoder, the PDB reader and structure building are fuzzed in CI.
