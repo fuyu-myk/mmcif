@@ -99,7 +99,7 @@ fn expand_assemblies(c: &mut Criterion) {
         let assembly = structure
             .assemblies()
             .iter()
-            .find(|assembly| assembly.id().to_string() == ASSEMBLY)
+            .find(|assembly| assembly.id() == ASSEMBLY)
             .unwrap_or_else(|| panic!("{id} has no assembly {ASSEMBLY}"));
         group.bench_function(BenchmarkId::from_parameter(id), |b| {
             b.iter(|| {

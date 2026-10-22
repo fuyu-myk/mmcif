@@ -36,6 +36,30 @@ macro_rules! string_id {
                 &self.0
             }
         }
+
+        impl PartialEq<str> for $name {
+            fn eq(&self, other: &str) -> bool {
+                &*self.0 == other
+            }
+        }
+
+        impl PartialEq<&str> for $name {
+            fn eq(&self, other: &&str) -> bool {
+                &*self.0 == *other
+            }
+        }
+
+        impl PartialEq<$name> for str {
+            fn eq(&self, other: &$name) -> bool {
+                self == &*other.0
+            }
+        }
+
+        impl PartialEq<$name> for &str {
+            fn eq(&self, other: &$name) -> bool {
+                *self == &*other.0
+            }
+        }
     };
 }
 
@@ -328,7 +352,9 @@ impl fmt::Display for ModelNumber {
 /// A chemical element symbol of one or two letters.
 ///
 /// The symbol is held with its first letter in upper case and its second in
-/// lower case. The letters are not checked against the periodic table.
+/// lower case. Reading does not check the letters against the periodic table;
+/// [`Element::is_known`] does. Each element, deuterium `D` and tritium `T` has
+/// a constant, such as [`Element::FE`], and [`Element::UNKNOWN`] is `X`.
 ///
 /// # Examples
 ///
@@ -336,9 +362,15 @@ impl fmt::Display for ModelNumber {
 /// use mmcif_model::Element;
 ///
 /// let iron = Element::parse("FE").unwrap();
+/// assert_eq!(iron, Element::FE);
 /// assert_eq!(iron.symbol(), "Fe");
 /// assert_eq!(iron.to_string(), "Fe");
 /// assert!(!iron.is_hydrogen());
+///
+/// match Element::parse("c").unwrap() {
+///     Element::C => {}
+///     other => panic!("expected carbon, got {other}"),
+/// }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Element([u8; 2]);
@@ -392,7 +424,64 @@ impl Element {
     pub fn is_hydrogen(&self) -> bool {
         matches!(self.symbol(), "H" | "D" | "T")
     }
+
+    /// Returns `true` if the symbol names one of the 118 elements, or
+    /// deuterium `D` or tritium `T`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::Element;
+    ///
+    /// assert!(Element::parse("Og").unwrap().is_known());
+    /// assert!(Element::D.is_known());
+    /// assert!(!Element::UNKNOWN.is_known());
+    /// assert!(!Element::parse("Qq").unwrap().is_known());
+    /// ```
+    pub fn is_known(&self) -> bool {
+        KNOWN_ELEMENTS.contains(self)
+    }
+
+    /// The symbol `X`, which files give for an atom of unknown element, as in
+    /// a `UNX` residue.
+    pub const UNKNOWN: Element = Element::from_symbol("X");
+
+    const fn from_symbol(symbol: &str) -> Element {
+        match symbol.as_bytes() {
+            [first] => Element([*first, 0]),
+            [first, second] => Element([*first, *second]),
+            _ => panic!("element symbols have one or two letters"),
+        }
+    }
 }
+
+macro_rules! elements {
+    ($($constant:ident $symbol:literal),* $(,)?) => {
+        impl Element {
+            $(
+                #[doc = concat!("The element with symbol `", $symbol, "`.")]
+                pub const $constant: Element = Element::from_symbol($symbol);
+            )*
+        }
+
+        const KNOWN_ELEMENTS: [Element; [$($symbol),*].len()] = [$(Element::$constant),*];
+    };
+}
+
+elements!(
+    H "H", HE "He", LI "Li", BE "Be", B "B", C "C", N "N", O "O", F "F", NE "Ne", NA "Na",
+    MG "Mg", AL "Al", SI "Si", P "P", S "S", CL "Cl", AR "Ar", K "K", CA "Ca", SC "Sc", TI "Ti",
+    V "V", CR "Cr", MN "Mn", FE "Fe", CO "Co", NI "Ni", CU "Cu", ZN "Zn", GA "Ga", GE "Ge",
+    AS "As", SE "Se", BR "Br", KR "Kr", RB "Rb", SR "Sr", Y "Y", ZR "Zr", NB "Nb", MO "Mo",
+    TC "Tc", RU "Ru", RH "Rh", PD "Pd", AG "Ag", CD "Cd", IN "In", SN "Sn", SB "Sb", TE "Te",
+    I "I", XE "Xe", CS "Cs", BA "Ba", LA "La", CE "Ce", PR "Pr", ND "Nd", PM "Pm", SM "Sm",
+    EU "Eu", GD "Gd", TB "Tb", DY "Dy", HO "Ho", ER "Er", TM "Tm", YB "Yb", LU "Lu", HF "Hf",
+    TA "Ta", W "W", RE "Re", OS "Os", IR "Ir", PT "Pt", AU "Au", HG "Hg", TL "Tl", PB "Pb",
+    BI "Bi", PO "Po", AT "At", RN "Rn", FR "Fr", RA "Ra", AC "Ac", TH "Th", PA "Pa", U "U",
+    NP "Np", PU "Pu", AM "Am", CM "Cm", BK "Bk", CF "Cf", ES "Es", FM "Fm", MD "Md", NO "No",
+    LR "Lr", RF "Rf", DB "Db", SG "Sg", BH "Bh", HS "Hs", MT "Mt", DS "Ds", RG "Rg", CN "Cn",
+    NH "Nh", FL "Fl", MC "Mc", LV "Lv", TS "Ts", OG "Og", D "D", T "T"
+);
 
 impl fmt::Display for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -418,6 +507,40 @@ mod tests {
         assert!(Element::parse("").is_none());
         assert!(Element::parse("C1").is_none());
         assert!(Element::parse("ABC").is_none());
+    }
+
+    #[test]
+    fn element_constants_match_parsed_symbols() {
+        assert_eq!(Element::parse("c"), Some(Element::C));
+        assert_eq!(Element::parse("FE"), Some(Element::FE));
+        assert_eq!(Element::FE.symbol(), "Fe");
+        assert_eq!(Element::OG.symbol(), "Og");
+        assert_eq!(Element::parse("x"), Some(Element::UNKNOWN));
+        assert!(matches!(Element::parse("Zn").unwrap(), Element::ZN));
+    }
+
+    #[test]
+    fn known_elements_are_the_periodic_table_and_hydrogen_isotopes() {
+        assert_eq!(KNOWN_ELEMENTS.len(), 120);
+        assert!(KNOWN_ELEMENTS.iter().all(Element::is_known));
+        assert!(Element::D.is_known() && Element::T.is_known());
+        assert!(!Element::UNKNOWN.is_known());
+        assert!(!Element::parse("Qq").unwrap().is_known());
+        let mut symbols: Vec<&str> = KNOWN_ELEMENTS.iter().map(Element::symbol).collect();
+        symbols.sort_unstable();
+        symbols.dedup();
+        assert_eq!(symbols.len(), 120);
+    }
+
+    #[test]
+    fn ids_compare_with_strings() {
+        let chain = AuthAsymId::new("A");
+        assert!(chain == "A");
+        assert!(chain == *"A");
+        assert!(chain != "B");
+        assert!("A" == chain);
+        assert!(*"A" == chain);
+        assert!(CompId::new("HOH") == "HOH");
     }
 
     #[test]
