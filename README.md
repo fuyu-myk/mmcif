@@ -81,7 +81,7 @@ error[no-polymer-residues]: chain H in 12e8.cif has no polymer residues
   = help: author chain H is label chain B; polymer chains in the file: A, B, C, D
 ```
 
-It also checks that every sampled length is satisfiable and that bonds and distances are geometrically possible against the coordinates in the file.
+Where an index in a specification selects a different residue under author numbering, it warns and names the author residue the index selects. It also checks that every sampled length is satisfiable and that bonds and distances are geometrically possible against the coordinates in the file.
 
 `mmcif lower spec.yaml --to boltzgen` and `mmcif lower spec.yaml --to rfd3` write a checked specification out for BoltzGen or [RFdiffusion3](https://github.com/RosettaCommons/foundry). Where a backend cannot express part of a specification, such as a disulfide bond for RFdiffusion3, lowering refuses and points at the line instead of dropping it. These types and formats may change before 1.0.
 
