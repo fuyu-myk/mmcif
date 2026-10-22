@@ -23,7 +23,7 @@ GEMMI_DUMP_COMMAND = [sys.executable, "harness/gemmi_dump.py"]
 DUMPER_BUILD_COMMAND = ["cargo", "build", "--release", "-p", "mmcif-dump", "--message-format=json-render-diagnostics"]
 DUMPER_CRATE = REPO_ROOT / "tools" / "mmcif-dump"
 EXPLAINED_KEYS = {"entry", "example", "category", "match", "reason"}
-CORPORA = ("seed", "full")
+CORPORA = ("seed", "pathology", "full")
 DEFAULT_TIMEOUT_SECONDS = 300.0
 STDERR_TAIL_LINES = 5
 USAGE_ERROR_STATUS = 2
@@ -178,9 +178,13 @@ def process_entry(entry: str, ours_command: list[str], tolerance: float, rules: 
 
 
 def corpus_entries(corpus: str) -> list[str]:
+    seed = set(json.loads(MANIFEST_PATH.read_text()))
+    if corpus == "seed":
+        return sorted(seed)
+    full = json.loads(CORPUS_PATH.read_text())
     if corpus == "full":
-        return sorted(json.loads(CORPUS_PATH.read_text())["pins"])
-    return sorted(json.loads(MANIFEST_PATH.read_text()))
+        return sorted(full["pins"])
+    return sorted(seed | {identifier for members in full["classes"].values() for identifier in members})
 
 
 def select_entries(corpus: str, requested: list[str] | None) -> list[str]:
@@ -296,7 +300,7 @@ def gemmi_version() -> str:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus", choices=CORPORA, default="seed", help="seed: corpus/manifest.json; full: every entry pinned in corpus/full.json")
+    parser.add_argument("--corpus", choices=CORPORA, default="seed", help="seed: corpus/manifest.json; pathology: the seed and the chosen class members in corpus/full.json; full: every entry pinned in corpus/full.json")
     parser.add_argument("--ids", nargs="*")
     parser.add_argument("--ours-cmd", help="command prefix that prints our JSON dump for the structure path appended to it")
     parser.add_argument("--tolerance", type=float, default=diff.DEFAULT_TOLERANCE)

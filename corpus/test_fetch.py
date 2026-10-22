@@ -20,6 +20,12 @@ class IdsTest(unittest.TestCase):
     def test_a_corpus_fetch_also_covers_pinned_entries(self):
         self.assertEqual(fetch.corpus_ids(CORPUS), ["1abc", "2abc", "3abc", "9abc"])
 
+    def test_each_set_names_its_entries(self):
+        corpus = CORPUS | {"classes": {"altlocs": ["9abc", "2abc"], "branched": ["2abc"]}}
+        self.assertEqual(fetch.set_ids(corpus, "all"), ["1abc", "2abc", "3abc", "9abc"])
+        self.assertEqual(fetch.set_ids(corpus, "full"), ["2abc", "9abc"])
+        self.assertEqual(fetch.set_ids(corpus, "pathology"), ["2abc", "9abc"])
+
 
 class ChangedFilesTest(unittest.TestCase):
     def test_only_files_whose_hash_differs_from_the_pin_are_reported(self):

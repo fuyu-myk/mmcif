@@ -147,14 +147,15 @@ class ProcessEntryTest(unittest.TestCase):
 
 class SelectionTest(unittest.TestCase):
     def test_the_full_corpus_is_every_pinned_entry(self):
-        corpus = write_rules(json.dumps({"pins": {"2abc": {}, "1abc": {}}}))
+        corpus = write_rules(json.dumps({"pins": {"2abc": {}, "1abc": {}, "9abc": {}}, "classes": {"altlocs": ["1abc"], "branched": []}}))
         manifest = write_rules(json.dumps({"9abc": ["baseline"]}))
         with mock.patch.object(run, "CORPUS_PATH", corpus), mock.patch.object(run, "MANIFEST_PATH", manifest):
-            self.assertEqual(run.select_entries("full", None), ["1abc", "2abc"])
+            self.assertEqual(run.select_entries("full", None), ["1abc", "2abc", "9abc"])
             self.assertEqual(run.select_entries("seed", None), ["9abc"])
+            self.assertEqual(run.select_entries("pathology", None), ["1abc", "9abc"])
             self.assertEqual(run.select_entries("full", ["2ABC"]), ["2abc"])
             with self.assertRaises(SystemExit):
-                run.select_entries("full", ["9abc"])
+                run.select_entries("pathology", ["2abc"])
 
 
 class ResultsTest(unittest.TestCase):

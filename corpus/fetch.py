@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import http.client
 import json
+import os
 import sys
 import time
 import tomllib
@@ -19,6 +20,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 DEFAULT_DELAY_SECONDS = 0.5
 MAX_ATTEMPTS = 3
 HASH_CHUNK_BYTES = 1 << 20
+SETS = ("all", "full", "pathology")
 TRANSFER_ERRORS = (OSError, http.client.HTTPException, EOFError)
 
 SOURCES = (
@@ -41,6 +43,14 @@ def candidate_ids(corpus: dict) -> list[str]:
 
 def corpus_ids(corpus: dict) -> list[str]:
     return sorted(set(candidate_ids(corpus)) | set(corpus.get("pins", {})))
+
+
+def set_ids(corpus: dict, name: str) -> list[str]:
+    if name == "full":
+        return sorted(corpus["pins"])
+    if name == "pathology":
+        return sorted({identifier for members in corpus["classes"].values() for identifier in members})
+    return corpus_ids(corpus)
 
 
 def sha256_of(path: Path) -> str:
@@ -125,7 +135,14 @@ def fetch_all(ids: list[str], delay: float, workers: int) -> tuple[list[tuple[st
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ids", nargs="*", help="fetch only these ids instead of all candidates")
-    parser.add_argument("--corpus", type=Path, help="fetch every id in this corpus file, such as corpus/full.json")
+    parser.add_argument("--corpus", type=Path, help="fetch the ids of this corpus file, such as corpus/full.json")
+    parser.add_argument(
+        "--set",
+        choices=SETS,
+        default="all",
+        help="with --corpus: all (candidates and pinned entries), full (pinned entries) or pathology (chosen class members)",
+    )
+    parser.add_argument("--allow-changed", action="store_true", help="report files that differ from their pins without failing")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY_SECONDS)
     parser.add_argument("--workers", type=int, default=1)
     return parser.parse_args()
@@ -138,19 +155,20 @@ def main() -> int:
         ids = sorted({i.lower() for i in arguments.ids})
     elif arguments.corpus:
         corpus = json.loads(arguments.corpus.read_text())
-        ids = corpus_ids(corpus)
-        pins = corpus.get("pins", {})
+        ids = set_ids(corpus, arguments.set)
+        pins = {identifier: pin for identifier, pin in corpus.get("pins", {}).items() if identifier in set(ids)}
     else:
         ids = load_candidate_ids(CANDIDATES_PATH)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     failures, downloaded_bytes = fetch_all(ids, arguments.delay, arguments.workers)
     changed = changed_files(pins)
+    annotation = "::warning::" if arguments.allow_changed and os.environ.get("GITHUB_ACTIONS") == "true" else ""
     for name in changed:
-        print(f"CHANGED {name} differs from its pin in {arguments.corpus}")
+        print(f"{annotation}CHANGED {name} differs from its pin in {arguments.corpus}")
     if changed:
         print("run corpus/select_entries.py classify to pin the new files, and commit the result")
     print(f"{len(ids)} ids, {downloaded_bytes} bytes downloaded, {len(failures)} failures, {len(changed)} changed")
-    return 1 if failures or changed else 0
+    return 1 if failures or (changed and not arguments.allow_changed) else 0
 
 
 if __name__ == "__main__":
