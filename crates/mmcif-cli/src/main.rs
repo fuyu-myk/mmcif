@@ -29,14 +29,11 @@ fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
         None => usage("no command given"),
-        Some("-h" | "--help") => {
-            println!("{}", help());
-            ExitCode::SUCCESS
-        }
-        Some("-V" | "--version") => {
-            println!("mmcif {}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
-        }
+        Some("-h" | "--help") => finish(ExitCode::SUCCESS, &format!("{}\n", help())),
+        Some("-V" | "--version") => finish(
+            ExitCode::SUCCESS,
+            &format!("mmcif {}\n", env!("CARGO_PKG_VERSION")),
+        ),
         Some(command @ ("check" | "show")) => match arguments.get(1) {
             None => usage(&format!("{command} needs a specification")),
             Some(_) if arguments.len() > 2 => usage(&format!(
@@ -73,9 +70,10 @@ fn run(command: &str, path: &str) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let (code, summary) = report(&checked);
     match command {
-        "show" => show(&checked),
-        _ => report(&checked),
+        "show" => finish(code, &show(&checked, summary)),
+        _ => finish(code, &summary),
     }
 }
 
@@ -105,13 +103,7 @@ fn emit(path: &str, backend: Backend) -> ExitCode {
         return ExitCode::FAILURE;
     };
     match lower(backend, checked.source, design) {
-        Ok(text) => match write(&text) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("mmcif: {error}");
-                ExitCode::from(2)
-            }
-        },
+        Ok(text) => finish(ExitCode::SUCCESS, &text),
         Err(refusal) => {
             let mut report = Report::new();
             report.extend(refusal.problems().iter().cloned());
@@ -122,62 +114,64 @@ fn emit(path: &str, backend: Backend) -> ExitCode {
     }
 }
 
-fn write(text: &str) -> std::io::Result<()> {
+fn finish(code: ExitCode, text: &str) -> ExitCode {
     use std::io::Write as _;
     let mut out = std::io::stdout().lock();
-    out.write_all(text.as_bytes())?;
-    out.flush()
+    match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
+        Ok(()) => code,
+        Err(error) => {
+            eprintln!("mmcif: {error}");
+            ExitCode::from(2)
+        }
+    }
 }
 
-fn report(checked: &Checked) -> ExitCode {
+fn report(checked: &Checked) -> (ExitCode, String) {
     let rendered = checked.render();
     if !rendered.is_empty() {
         eprint!("{rendered}");
     }
     let errors = checked.report.errors().count();
     let warnings = checked.report.len() - errors;
-    match (errors, warnings) {
-        (0, 0) => {
-            println!("no problems found");
-            ExitCode::SUCCESS
-        }
-        (0, warnings) => {
-            println!("{} passed", counted(warnings, "warning"));
-            ExitCode::SUCCESS
-        }
-        (errors, 0) => {
-            println!("{} found", counted(errors, "error"));
-            ExitCode::FAILURE
-        }
-        (errors, warnings) => {
-            println!(
+    let (code, line) = match (errors, warnings) {
+        (0, 0) => (ExitCode::SUCCESS, "no problems found".to_string()),
+        (0, warnings) => (
+            ExitCode::SUCCESS,
+            format!("{} passed", counted(warnings, "warning")),
+        ),
+        (errors, 0) => (
+            ExitCode::FAILURE,
+            format!("{} found", counted(errors, "error")),
+        ),
+        (errors, warnings) => (
+            ExitCode::FAILURE,
+            format!(
                 "{} and {} found",
                 counted(errors, "error"),
                 counted(warnings, "warning")
-            );
-            ExitCode::FAILURE
-        }
-    }
+            ),
+        ),
+    };
+    (code, format!("{line}\n"))
 }
 
-fn show(checked: &Checked) -> ExitCode {
-    let code = report(checked);
+fn show(checked: &Checked, summary: String) -> String {
     let Some(shortest) = checked.shortest.as_ref().filter(|_| !checked.has_errors()) else {
-        return code;
+        return summary;
     };
-    println!();
+    let mut out = summary;
+    out.push('\n');
     for id in shortest.segment_ids() {
-        println!("{}", segment_line(shortest, id));
+        out.push_str(&segment_line(shortest, id));
+        out.push('\n');
     }
-    let constraints = shortest.constraints().len();
-    let groups = shortest.groups().len();
-    println!(
-        "{} over {} slots, {}",
-        counted(constraints, "constraint"),
+    out.push_str(&format!(
+        "{} over {} slots, {}\n",
+        counted(shortest.constraints().len(), "constraint"),
         shortest.slot_count(),
-        counted(groups, "group")
-    );
-    code
+        counted(shortest.groups().len(), "group")
+    ));
+    out
 }
 
 fn segment_line(shortest: &Instantiated, id: &SegmentId) -> String {
