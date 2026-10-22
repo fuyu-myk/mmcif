@@ -52,7 +52,7 @@ def declares_sequence_heterogeneity(block: cif.Block) -> bool:
     return any(value.lower().startswith("y") for value in column(block, "_entity_poly_seq.hetero"))
 
 
-def has_mixed_residue_types(block: cif.Block) -> bool:
+def mixed_residue_positions(block: cif.Block) -> int:
     asym = column(block, "_atom_site.label_asym_id")
     seq = column(block, "_atom_site.label_seq_id")
     comp = column(block, "_atom_site.label_comp_id")
@@ -60,7 +60,11 @@ def has_mixed_residue_types(block: cif.Block) -> bool:
     for asym_id, seq_id, comp_id in zip(asym, seq, comp):
         if seq_id:
             names_by_position[(asym_id, seq_id)].add(comp_id)
-    return any(len(names) > 1 for names in names_by_position.values())
+    return sum(1 for names in names_by_position.values() if len(names) > 1)
+
+
+def has_mixed_residue_types(block: cif.Block) -> bool:
+    return mixed_residue_positions(block) > 0
 
 
 def has_microheterogeneity(block: cif.Block) -> bool:
