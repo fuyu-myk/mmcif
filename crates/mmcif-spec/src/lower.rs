@@ -250,11 +250,85 @@ fn from_file(
             report,
         );
         check_design(source, file, &selection.chain.value, &residues, report);
+        if let Some(ranges) = &selection.residues {
+            numbering(source, target, &selection.chain.value, ranges, report);
+        }
+    }
+    for selection in &file.design {
+        if let Some(ranges) = &selection.residues {
+            numbering(source, target, &selection.chain.value, ranges, report);
+        }
+    }
+    for selection in &file.structure {
+        for (_, ranges) in &selection.regions {
+            numbering(source, target, &selection.chain.value, ranges, report);
+        }
     }
     lowered.targets.push(loaded);
     for selection in &file.structure {
         structure(source, lowered, selection, own, report, groups);
     }
+}
+
+fn written(ranges: &Ranges) -> Vec<u32> {
+    match ranges {
+        Ranges::All => Vec::new(),
+        Ranges::List(list) => list
+            .iter()
+            .flat_map(|range| {
+                std::iter::once(range.min).chain(range.max.filter(|max| *max != range.min))
+            })
+            .collect(),
+    }
+}
+
+fn numbering(
+    source: SourceId,
+    target: &Target,
+    chain: &str,
+    ranges: &Spanned<Ranges>,
+    report: &mut Report,
+) {
+    numbered(
+        source,
+        target,
+        chain,
+        ranges.span,
+        &written(&ranges.value),
+        report,
+    );
+}
+
+fn numbered(
+    source: SourceId,
+    target: &Target,
+    chain: &str,
+    span: Span,
+    indices: &[u32],
+    report: &mut Report,
+) {
+    let differences = resolve::author_differences(target, chain, indices);
+    if differences.is_empty() {
+        return;
+    }
+    let reverse = differences.iter().find_map(|(index, _)| {
+        resolve::label_for_author(target, chain, *index).map(|found| (*index, found))
+    });
+    let help = match reverse {
+        Some((index, (author_chain, label))) => format!(
+            "indices here count label numbers; author {author_chain} {index} is label {label}"
+        ),
+        None => "indices here count label numbers".to_string(),
+    };
+    let labels: Vec<String> = differences.into_iter().map(|(_, text)| text).collect();
+    report.push(
+        Diagnostic::warning(
+            "author-numbering-differs",
+            format!("chain {chain} is numbered differently by its authors"),
+        )
+        .at(source, span, labels.join(", "))
+        .help(help),
+    );
 }
 
 fn every_chain(target: &Target, span: Span) -> Vec<Selection> {
@@ -480,7 +554,22 @@ fn address(
         return None;
     };
     match locate(segment, atom.index.value, &lowered.spec) {
-        Some((element, offset)) => Some(SymbolicAddress::at(segment.id.clone(), element, offset)),
+        Some((element, offset)) => {
+            if let Some(target) = segment
+                .target()
+                .and_then(|index| lowered.targets.get(index))
+            {
+                numbered(
+                    source,
+                    target,
+                    segment.id.as_str(),
+                    atom.index.span,
+                    &[atom.index.value],
+                    report,
+                );
+            }
+            Some(SymbolicAddress::at(segment.id.clone(), element, offset))
+        }
         None => {
             let help = match segment.kind.addressing() {
                 Addressing::Positional => format!(

@@ -144,6 +144,49 @@ fn polymer_chains<'a>(model: &'a Model, author: Option<&str>) -> Vec<&'a str> {
     names
 }
 
+pub fn author_differences(target: &Target, chain: &str, indices: &[u32]) -> Vec<(u32, String)> {
+    let Some(found) = target
+        .structure
+        .first_model()
+        .and_then(|model| model.chain(chain))
+    else {
+        return Vec::new();
+    };
+    indices
+        .iter()
+        .filter_map(|index| {
+            let residue = found
+                .residues()
+                .find(|residue| residue.label_seq().map(LabelSeqId::get) == Some(*index))?;
+            let author = residue.auth_seq().get();
+            if i64::from(author) == i64::from(*index) && residue.ins_code().get().is_none() {
+                return None;
+            }
+            Some((
+                *index,
+                format!(
+                    "label {index} is author {} {author}{} {}",
+                    found.auth_asym(),
+                    residue.ins_code(),
+                    residue.comp()
+                ),
+            ))
+        })
+        .collect()
+}
+
+pub fn label_for_author(target: &Target, chain: &str, author: u32) -> Option<(String, u32)> {
+    let found = target.structure.first_model()?.chain(chain)?;
+    let residue = found.residues().find(|residue| {
+        i64::from(residue.auth_seq().get()) == i64::from(author)
+            && residue.ins_code().get().is_none()
+    })?;
+    Some((
+        found.auth_asym().as_str().to_string(),
+        residue.label_seq()?.get(),
+    ))
+}
+
 fn polymer(residue: &ResidueRef<'_>) -> Option<Residue> {
     let seq = residue.label_seq()?;
     Some(Residue {

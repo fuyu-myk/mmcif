@@ -741,3 +741,82 @@ fn a_whole_file_include_still_skips_water_without_complaint() {
         [SegmentId::new("A"), SegmentId::new("B")]
     );
 }
+
+fn shifted(selector: &str) -> Checked {
+    check(&format!(
+        concat!(
+            "entities:\n",
+            "  - file:\n",
+            "      path: shifted.cif\n",
+            "      include:\n",
+            "        - chain:\n",
+            "            id: A\n",
+            "{}",
+        ),
+        selector
+    ))
+}
+
+#[test]
+fn a_residue_index_whose_author_number_differs_is_flagged() {
+    let checked = shifted("            res_index: 3\n");
+    assert_eq!(checked.report.codes(), ["author-numbering-differs"]);
+    assert!(!checked.has_errors());
+    let diagnostic = &checked.report.diagnostics()[0];
+    assert_eq!(diagnostic.labels[0].message, "label 3 is author A 5 GLY");
+    assert_eq!(
+        diagnostic.help.as_deref(),
+        Some("indices here count label numbers; author A 3 is label 1")
+    );
+}
+
+#[test]
+fn every_written_end_of_a_range_is_checked() {
+    let checked = shifted("            res_index: 1..2\n");
+    assert_eq!(checked.report.codes(), ["author-numbering-differs"]);
+    let diagnostic = &checked.report.diagnostics()[0];
+    assert_eq!(
+        diagnostic.labels[0].message,
+        "label 1 is author A 3 ALA, label 2 is author A 4 CYS"
+    );
+    assert_eq!(
+        diagnostic.help.as_deref(),
+        Some("indices here count label numbers")
+    );
+}
+
+#[test]
+fn a_bond_index_is_checked_against_author_numbering() {
+    let checked = shifted(concat!(
+        "constraints:\n",
+        "  - bond:\n",
+        "      atom1: [A, 2, SG]\n",
+        "      atom2: [A, 2, CA]\n",
+    ));
+    assert!(
+        checked.report.codes().contains(&"author-numbering-differs"),
+        "{}",
+        checked.render()
+    );
+    assert!(checked.render().contains("label 2 is author A 4 CYS"));
+}
+
+#[test]
+fn matching_numbering_raises_nothing() {
+    let checked = check(concat!(
+        "entities:\n",
+        "  - file:\n",
+        "      path: target.cif\n",
+        "      include:\n",
+        "        - chain:\n",
+        "            id: A\n",
+        "            res_index: 2..5\n",
+    ));
+    assert!(checked.report.is_empty(), "{}", checked.render());
+}
+
+#[test]
+fn a_whole_chain_include_writes_no_indices_to_check() {
+    let checked = shifted("");
+    assert!(checked.report.is_empty(), "{}", checked.render());
+}
