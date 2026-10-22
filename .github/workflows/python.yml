@@ -38,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Python package README matches the repository README
+        run: cmp README.md crates/mmcif-py/README.md
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: crates/mmcif-py

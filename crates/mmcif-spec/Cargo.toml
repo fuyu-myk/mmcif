@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 keywords = ["protein", "design", "yaml", "diagnostics", "bioinformatics"]
 categories = ["science::computational-biology::structural-modeling", "parser-implementations"]
 

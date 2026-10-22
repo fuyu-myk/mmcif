@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "mmcif-io"
 dynamic = ["version"]
 description = "Correctness-first mmCIF, BinaryCIF and PDB structure IO with typed numbering"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
