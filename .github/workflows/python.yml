@@ -68,5 +68,6 @@ jobs:
           pattern: wheels-${{ matrix.os }}-*
           merge-multiple: true
           path: dist
-      - run: python -m pip install --only-binary mmcif-io --find-links dist mmcif-io pytest
+      - run: python -m pip install pytest numpy
+      - run: python -m pip install --no-index --find-links dist --only-binary mmcif-io mmcif-io
       - run: python -m pytest -q crates/mmcif-py/python/tests
