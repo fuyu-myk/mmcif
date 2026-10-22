@@ -1,6 +1,6 @@
 [package]
 name = "mmcif-model"
-description = "Typed macromolecular structure model over mmCIF, BinaryCIF and PDB"
+description = "Correctness-first mmCIF, BinaryCIF and PDB structure IO with typed numbering"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
