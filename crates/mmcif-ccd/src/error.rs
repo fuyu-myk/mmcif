@@ -58,6 +58,25 @@ pub enum CcdError {
         /// The atom name as written in the block.
         atom: String,
     },
+    /// A data block read as one component lists more than one in
+    /// `_chem_comp`.
+    #[error("block {block}: _chem_comp lists {count} components, not one")]
+    ManyComponents {
+        /// The name of the data block.
+        block: String,
+        /// The number of rows in `_chem_comp`.
+        count: usize,
+    },
+    /// An atom or bond names a component that `_chem_comp` does not list.
+    #[error("block {block}: {item} names component {component:?}, which _chem_comp does not list")]
+    UnknownComponent {
+        /// The name of the data block.
+        block: String,
+        /// The tag of the item, such as `_chem_comp_atom.comp_id`.
+        item: String,
+        /// The component id as written in the block.
+        component: String,
+    },
     /// A component has more than 65,536 atoms.
     #[error("block {block}: {count} atoms exceed the supported maximum")]
     TooManyAtoms {
