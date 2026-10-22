@@ -66,6 +66,7 @@ jobs:
       - run: uv venv harness/.venv
       - run: uv pip install --python harness/.venv/bin/python -r harness/requirements.txt
       - run: harness/.venv/bin/python -m unittest discover -s corpus -p "test_*.py"
+      - run: harness/.venv/bin/python -m unittest discover -s harness -p "test_*.py"
       - run: harness/.venv/bin/python corpus/fetch.py
       - run: cargo test --release -p mmcif-cif -p mmcif-model --test corpus -- --ignored
       - run: cargo build --release -p mmcif-dump
