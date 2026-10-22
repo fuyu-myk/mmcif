@@ -12,6 +12,20 @@ use crate::document::PyDocument;
 use crate::errors::{assembly_error, model_error, numbering_error, read_error};
 use crate::hierarchy::PyModel;
 
+/// A macromolecular structure: its models, entities, biological assemblies and
+/// residue numbering.
+///
+/// Read one with ``read`` or one of the other readers.
+///
+/// Examples
+/// --------
+/// >>> structure = mmcif_io.read("1crn.bcif")
+/// >>> structure.entry_id
+/// '1CRN'
+/// >>> structure.models
+/// [<Model 1 with 1 chains, 327 atoms>]
+/// >>> structure.entities
+/// [<Entity 1 polymer>]
 #[pyclass(name = "Structure", module = "mmcif_io", frozen)]
 pub struct PyStructure {
     inner: Arc<Structure>,
@@ -33,36 +47,142 @@ fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStru
         .map_err(|error| model_error(error, path))
 }
 
+/// Read the structure in the file at ``path``.
+///
+/// The format follows the file extension: ``.cif`` and ``.mmcif`` are read as
+/// mmCIF, ``.bcif`` as BinaryCIF, and ``.pdb`` and ``.ent`` as PDB. ``path`` is
+/// a string or a path-like object.
+///
+/// Raises
+/// ------
+/// OSError
+///     If the file cannot be read.
+/// ReadError
+///     If the extension is not one of these, or the contents are not valid for
+///     the format.
+///
+/// Examples
+/// --------
+/// >>> mmcif_io.read("1crn.bcif")
+/// <Structure 1CRN with 1 models>
+/// >>> mmcif_io.read("example.pdb").entry_id
+/// '1ABC'
 #[pyfunction]
 pub fn read(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
     wrap_at(py.detach(|| mmcif_model::read(&path)), &path)
 }
 
+/// Read the structure in the mmCIF file at ``path``.
+///
+/// Raises
+/// ------
+/// OSError
+///     If the file cannot be read.
+/// ReadError
+///     If the contents are not valid for the format, or lack the categories a
+///     structure needs.
+///
+/// Examples
+/// --------
+/// >>> structure = mmcif_io.read_mmcif("1crn.cif")
+/// >>> structure.entry_id
+/// '1CRN'
 #[pyfunction]
 pub fn read_mmcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
     wrap_at(py.detach(|| mmcif_model::read_mmcif(&path)), &path)
 }
 
+/// Read the structure in the BinaryCIF file at ``path``.
+///
+/// Raises
+/// ------
+/// OSError
+///     If the file cannot be read.
+/// ReadError
+///     If the contents are not valid for the format, or lack the categories a
+///     structure needs.
+///
+/// Examples
+/// --------
+/// >>> structure = mmcif_io.read_bcif("1crn.bcif")
+/// >>> structure.models[0].atom_count
+/// 327
 #[pyfunction]
 pub fn read_bcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
     wrap_at(py.detach(|| mmcif_model::read_bcif(&path)), &path)
 }
 
+/// Read the structure in the PDB file at ``path``.
+///
+/// Raises
+/// ------
+/// OSError
+///     If the file cannot be read.
+/// ReadError
+///     If the contents are not valid for the format, or lack the categories a
+///     structure needs.
+///
+/// Examples
+/// --------
+/// >>> structure = mmcif_io.read_pdb("example.pdb")
+/// >>> len(structure.models)
+/// 2
 #[pyfunction]
 pub fn read_pdb(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
     wrap_at(py.detach(|| mmcif_model::read_pdb(&path)), &path)
 }
 
+/// Parse a structure from mmCIF text.
+///
+/// Raises
+/// ------
+/// ReadError
+///     If ``text`` is not valid mmCIF, or lacks the categories a structure
+///     needs.
+///
+/// Examples
+/// --------
+/// >>> with open("1crn.cif") as file:
+/// ...     structure = mmcif_io.parse_mmcif(file.read())
+/// >>> structure.entry_id
+/// '1CRN'
 #[pyfunction]
 pub fn parse_mmcif(py: Python<'_>, text: String) -> PyResult<PyStructure> {
     wrap(py.detach(|| mmcif_model::parse_mmcif(&text)))
 }
 
+/// Parse a structure from BinaryCIF bytes.
+///
+/// Raises
+/// ------
+/// ReadError
+///     If ``data`` is not valid BinaryCIF, or lacks the categories a structure
+///     needs.
+///
+/// Examples
+/// --------
+/// >>> with open("1crn.bcif", "rb") as file:
+/// ...     structure = mmcif_io.parse_bcif(file.read())
+/// >>> structure.entry_id
+/// '1CRN'
 #[pyfunction]
 pub fn parse_bcif(py: Python<'_>, data: Vec<u8>) -> PyResult<PyStructure> {
     wrap(py.detach(|| mmcif_model::parse_bcif(&data)))
 }
 
+/// Parse a structure from PDB text.
+///
+/// Raises
+/// ------
+/// ReadError
+///     If ``text`` is not valid PDB.
+///
+/// Examples
+/// --------
+/// >>> with open("example.pdb") as file:
+/// ...     structure = mmcif_io.parse_pdb(file.read())
+/// >>> structure.entry_id
+/// '1ABC'
 #[pyfunction]
 pub fn parse_pdb(py: Python<'_>, text: String) -> PyResult<PyStructure> {
     wrap(py.detach(|| mmcif_model::parse_pdb(&text)))
@@ -70,17 +190,34 @@ pub fn parse_pdb(py: Python<'_>, text: String) -> PyResult<PyStructure> {
 
 #[pymethods]
 impl PyStructure {
+    /// Build a structure from a parsed CIF document.
+    ///
+    /// The first data block of ``document`` is read.
+    ///
+    /// Raises
+    /// ------
+    /// ReadError
+    ///     If the document has no data block, or lacks the categories a structure
+    ///     needs.
+    ///
+    /// Examples
+    /// --------
+    /// >>> document = mmcif_io.Document.open("1crn.cif")
+    /// >>> mmcif_io.Structure.from_document(document).entry_id
+    /// '1CRN'
     #[staticmethod]
     fn from_document(py: Python<'_>, document: &PyDocument) -> PyResult<PyStructure> {
         let document = Arc::clone(&document.inner);
         wrap(py.detach(move || Structure::from_document(&document)))
     }
 
+    /// The ``_entry.id`` of the structure, or ``None`` if the file gives none.
     #[getter]
     fn entry_id(&self) -> Option<String> {
         self.inner.entry_id().map(str::to_owned)
     }
 
+    /// The models of the structure, in file order.
     #[getter]
     fn models(&self) -> Vec<PyModel> {
         self.inner
@@ -92,6 +229,15 @@ impl PyStructure {
             .collect()
     }
 
+    /// Return the model with model number ``number``, or ``None``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("example.pdb")
+    /// >>> structure.model(2).number
+    /// 2
+    /// >>> structure.model(3) is None
+    /// True
     fn model(&self, number: i32) -> Option<PyModel> {
         self.inner
             .model(ModelNumber::new(number))
@@ -100,15 +246,26 @@ impl PyStructure {
             })
     }
 
+    /// The entities of the structure, in file order.
     #[getter]
     fn entities(&self) -> Vec<PyEntity> {
         self.inner.entities().iter().map(PyEntity::from).collect()
     }
 
+    /// Return the entity with id ``id``, or ``None``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("1crn.bcif")
+    /// >>> structure.entity("1").description
+    /// 'CRAMBIN'
+    /// >>> structure.entity("9") is None
+    /// True
     fn entity(&self, id: &str) -> Option<PyEntity> {
         self.inner.entity(id).map(PyEntity::from)
     }
 
+    /// The biological assemblies of the structure, in file order.
     #[getter]
     fn assemblies(&self) -> Vec<PyAssembly> {
         self.inner
@@ -136,6 +293,25 @@ impl PyStructure {
             .collect()
     }
 
+    /// Return a new model holding the assembly ``assembly_id``, built from the model
+    /// at index ``model_index`` in ``models``.
+    ///
+    /// Each chain of the new model records the operators that placed it in
+    /// ``Chain.operators``.
+    ///
+    /// Raises
+    /// ------
+    /// IndexError
+    ///     If there is no model at ``model_index``.
+    /// AssemblyError
+    ///     If the structure has no assembly ``assembly_id``, or it cannot be built.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("1crn.bcif")
+    /// >>> assembled = structure.assemble("1")
+    /// >>> assembled.chains[0].operators
+    /// ['1']
     #[pyo3(signature = (assembly_id, model_index = 0))]
     fn assemble(&self, py: Python<'_>, assembly_id: &str, model_index: usize) -> PyResult<PyModel> {
         let model = self
@@ -154,6 +330,21 @@ impl PyStructure {
         })
     }
 
+    /// Return the author address ``(chain, seq, ins_code)`` of the polymer residue
+    /// at label address ``(label_asym, label_seq)``.
+    ///
+    /// ``ins_code`` is ``None`` when the residue has no insertion code.
+    ///
+    /// Raises
+    /// ------
+    /// NumberingError
+    ///     If ``label_seq`` is 0, or no polymer residue has that label address.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("example.cif")
+    /// >>> structure.to_auth("AA", 3)
+    /// ('H1', 100, 'A')
     fn to_auth(&self, label_asym: &str, label_seq: u32) -> PyResult<(String, i32, Option<String>)> {
         let seq = LabelSeqId::new(label_seq)
             .ok_or_else(|| numbering_error("label_seq_id starts at 1"))?;
@@ -173,6 +364,19 @@ impl PyStructure {
         ))
     }
 
+    /// Return the label address ``(label_asym, label_seq)`` of the polymer residue
+    /// at author address ``(chain, seq, ins_code)``.
+    ///
+    /// Raises
+    /// ------
+    /// NumberingError
+    ///     If no polymer residue has that author address.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("example.cif")
+    /// >>> structure.to_label("H1", 100, "A")
+    /// ('AA', 3)
     #[pyo3(signature = (chain, seq, ins_code = None))]
     fn to_label(&self, chain: &str, seq: i32, ins_code: Option<char>) -> PyResult<(String, u32)> {
         let key = AuthResidueKey {
@@ -197,14 +401,35 @@ impl PyStructure {
     }
 }
 
+/// An entity of a structure, from ``_entity``.
+///
+/// Examples
+/// --------
+/// >>> entity = mmcif_io.read("1crn.bcif").entities[0]
+/// >>> entity.kind, entity.polymer_type, entity.description
+/// ('polymer', 'polypeptide(L)', 'CRAMBIN')
+/// >>> entity.sequence[:3]
+/// [['THR'], ['THR'], ['CYS']]
 #[pyclass(name = "Entity", module = "mmcif_io", frozen, get_all)]
 pub struct PyEntity {
+    /// The ``_entity.id``.
     id: String,
+    /// The entity type: ``"polymer"``, ``"non-polymer"``, ``"branched"``,
+    /// ``"water"`` or ``"macrolide"``.
     kind: String,
+    /// The ``_entity.pdbx_description``, or ``None``.
     description: Option<String>,
+    /// The ``_entity_poly.type``, such as ``"polypeptide(L)"``, or ``None`` if
+    /// the entity is not a polymer.
     polymer_type: Option<String>,
+    /// The canonical one-letter sequence, from
+    /// ``_entity_poly.pdbx_seq_one_letter_code_can``, or ``None``.
     canonical_sequence: Option<String>,
+    /// The component ids at each position of the polymer sequence. A position
+    /// holds more than one id where the sequence is heterogeneous. Empty if
+    /// the entity is not a polymer.
     sequence: Vec<Vec<String>>,
+    /// The label asym ids of the chains that belong to the entity.
     asym_ids: Vec<String>,
 }
 
@@ -249,11 +474,28 @@ impl PyEntity {
     }
 }
 
+/// A biological assembly, from ``_pdbx_struct_assembly`` and
+/// ``_pdbx_struct_assembly_gen``.
+///
+/// Build its coordinates with ``Structure.assemble``.
+///
+/// Examples
+/// --------
+/// >>> assembly = mmcif_io.read("1crn.bcif").assemblies[0]
+/// >>> assembly.id, assembly.details
+/// ('1', 'author_defined_assembly')
+/// >>> assembly.generators
+/// [('1', ['A'])]
 #[pyclass(name = "Assembly", module = "mmcif_io", frozen, get_all)]
 pub struct PyAssembly {
+    /// The ``_pdbx_struct_assembly.id``.
     id: String,
+    /// The ``_pdbx_struct_assembly.details``, or ``None``.
     details: Option<String>,
+    /// The number of operator combinations across all generators.
     operator_count: usize,
+    /// The ``(operator expression, label asym ids)`` pairs from
+    /// ``_pdbx_struct_assembly_gen``, in file order.
     generators: Vec<(String, Vec<String>)>,
 }
 

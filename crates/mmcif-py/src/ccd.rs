@@ -7,6 +7,22 @@ use pyo3::prelude::*;
 
 use crate::errors::{ccd_error, os_error, read_error};
 
+/// A compiled Chemical Component Dictionary index that returns components by id.
+///
+/// The index records the name of the dictionary release it was built from.
+/// ``index[id]`` returns the component ``id`` as ``get`` does and raises
+/// ``KeyError`` if there is none, ``id in index`` tests for one, and
+/// ``len(index)`` is the number of components.
+///
+/// Examples
+/// --------
+/// >>> index = mmcif_io.CcdIndex.build("components.cif", "2026-10-20")
+/// >>> index
+/// <CcdIndex 2026-10-20 with 8 components>
+/// >>> index["ALA"].name
+/// 'ALANINE'
+/// >>> "XYZ" in index
+/// False
 #[pyclass(name = "CcdIndex", module = "mmcif_io", frozen)]
 pub struct PyCcdIndex {
     inner: Arc<CcdIndex>,
@@ -20,6 +36,21 @@ fn wrap(index: CcdIndex) -> PyCcdIndex {
 
 #[pymethods]
 impl PyCcdIndex {
+    /// Read the index file at ``path``, as written by ``build``.
+    ///
+    /// Raises
+    /// ------
+    /// OSError
+    ///     If the file cannot be read.
+    /// ReadError
+    ///     If the contents are not a component index.
+    ///
+    /// Examples
+    /// --------
+    /// >>> mmcif_io.CcdIndex.build("components.cif", "2026-10-20", out="ccd.idx")
+    /// <CcdIndex 2026-10-20 with 8 components>
+    /// >>> mmcif_io.CcdIndex.open("ccd.idx")
+    /// <CcdIndex 2026-10-20 with 8 components>
     #[staticmethod]
     fn open(py: Python<'_>, path: PathBuf) -> PyResult<PyCcdIndex> {
         py.detach(|| CcdIndex::open(&path))
@@ -27,6 +58,28 @@ impl PyCcdIndex {
             .map_err(|error| ccd_error(error, &path))
     }
 
+    /// Compile the Chemical Component Dictionary file at ``source`` into an index for
+    /// the release named ``release``.
+    ///
+    /// ``source`` is CIF with one data block per component, as in ``components.cif``.
+    /// If ``out`` is given, the index is also written to that path for ``open`` to
+    /// read.
+    ///
+    /// Raises
+    /// ------
+    /// OSError
+    ///     If ``source`` cannot be read or is not valid UTF-8, or ``out`` cannot be
+    ///     written.
+    /// ReadError
+    ///     If ``source`` is not valid CIF, a block cannot be read as a component, a
+    ///     component id is not 1 to 8 ASCII characters without whitespace, or two
+    ///     blocks have the same component id.
+    ///
+    /// Examples
+    /// --------
+    /// >>> index = mmcif_io.CcdIndex.build("components.cif", "2026-10-20")
+    /// >>> index.release
+    /// '2026-10-20'
     #[staticmethod]
     #[pyo3(signature = (source, release, out = None))]
     fn build(
@@ -48,20 +101,61 @@ impl PyCcdIndex {
         CcdIndex::from_bytes(bytes).map(wrap).map_err(read_error)
     }
 
+    /// Read an index from ``data``, the contents of a file written by ``build``.
+    ///
+    /// Raises
+    /// ------
+    /// ReadError
+    ///     If ``data`` is not a component index or was written in a format version
+    ///     this release does not read.
+    ///
+    /// Examples
+    /// --------
+    /// >>> mmcif_io.CcdIndex.build("components.cif", "2026-10-20", out="ccd.idx")
+    /// <CcdIndex 2026-10-20 with 8 components>
+    /// >>> with open("ccd.idx", "rb") as file:
+    /// ...     index = mmcif_io.CcdIndex.from_bytes(file.read())
+    /// >>> len(index)
+    /// 8
     #[staticmethod]
     fn from_bytes(data: Vec<u8>) -> PyResult<PyCcdIndex> {
         CcdIndex::from_bytes(data).map(wrap).map_err(read_error)
     }
 
+    /// The name of the dictionary release given when the index was built.
     #[getter]
     fn release(&self) -> String {
         self.inner.release().to_owned()
     }
 
+    /// Return the component ids in the index, in ascending byte order.
+    ///
+    /// Examples
+    /// --------
+    /// >>> index = mmcif_io.CcdIndex.build("components.cif", "2026-10-20")
+    /// >>> index.ids()[:3]
+    /// ['A1AAA', 'ALA', 'ATP']
     fn ids(&self) -> Vec<String> {
         self.inner.ids().map(str::to_owned).collect()
     }
 
+    /// Return the component with id ``id``, or ``None`` if the index does not hold
+    /// it.
+    ///
+    /// Ids are matched exactly, including case.
+    ///
+    /// Raises
+    /// ------
+    /// ReadError
+    ///     If the index record for ``id`` is corrupt.
+    ///
+    /// Examples
+    /// --------
+    /// >>> index = mmcif_io.CcdIndex.build("components.cif", "2026-10-20")
+    /// >>> index.get("MSE").parent
+    /// 'MET'
+    /// >>> index.get("mse") is None
+    /// True
     fn get(&self, id: &str) -> PyResult<Option<PyComponent>> {
         Ok(self
             .inner
@@ -95,17 +189,56 @@ impl PyCcdIndex {
 type AtomRow = (String, String, i8, bool, bool, &'static str);
 type BondRow = (u16, u16, &'static str, bool, &'static str);
 
+/// A chemical component from the dictionary, with its atoms and the bonds between
+/// them.
+///
+/// Examples
+/// --------
+/// >>> component = mmcif_io.CcdIndex.build("components.cif", "2026-10-20")["ALA"]
+/// >>> component
+/// <Component ALA ALANINE>
+/// >>> component.kind, component.formula
+/// ('L-PEPTIDE LINKING', 'C3 H7 N O2')
+/// >>> component.atoms[1]
+/// ('CA', 'C', 0, False, False, 'S')
+/// >>> component.bonds[0]
+/// (0, 1, 'SING', False, 'N')
 #[pyclass(name = "Component", module = "mmcif_io", frozen, get_all)]
 pub struct PyComponent {
+    /// The component id, such as ``ALA``.
     id: String,
+    /// The component name, such as ``ALANINE``, or an empty string if the
+    /// dictionary gives none.
     name: String,
+    /// The component type, such as ``L-PEPTIDE LINKING``, or an empty string if the
+    /// dictionary gives none.
     kind: String,
+    /// The one-letter code, such as ``A`` for alanine, or ``None``.
     one_letter_code: Option<String>,
+    /// The id of the parent component, such as ``MET`` for selenomethionine, or
+    /// ``None``.
     parent: Option<String>,
+    /// The chemical formula, such as ``C3 H7 N O2``, or ``None``.
     formula: Option<String>,
+    /// The formal charge of the component, or 0 if the dictionary gives none.
     formal_charge: i32,
+    /// The release status, such as ``REL``, or an empty string if the dictionary
+    /// gives none.
     release_status: String,
+    /// The atoms, in the order the dictionary lists them, as
+    /// ``(name, element, charge, is_leaving, is_aromatic, stereo)`` tuples.
+    ///
+    /// ``element`` is as the dictionary writes it, such as ``C`` or ``FE``.
+    /// ``charge`` is 0 if the dictionary gives none, and ``stereo`` is ``"R"``,
+    /// ``"S"`` or ``"N"`` for none.
     atoms: Vec<AtomRow>,
+    /// The bonds, in the order the dictionary lists them, as
+    /// ``(first, second, order, is_aromatic, stereo)`` tuples.
+    ///
+    /// ``first`` and ``second`` are positions in ``atoms``. ``order`` is the
+    /// ``_chem_comp_bond.value_order`` code: ``SING``, ``DOUB``, ``TRIP``, ``QUAD``,
+    /// ``AROM``, ``DELO``, ``PI`` or ``POLY``. ``stereo`` is ``"E"``, ``"Z"`` or
+    /// ``"N"`` for none.
     bonds: Vec<BondRow>,
 }
 

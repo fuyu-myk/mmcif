@@ -7,6 +7,24 @@ mod structure;
 
 use pyo3::prelude::*;
 
+/// Read mmCIF, BinaryCIF and PDB files into a typed structure model.
+///
+/// ``read`` returns a ``Structure`` holding models, chains, residues and
+/// atoms, with coordinates as NumPy arrays. ``Document`` gives the CIF
+/// tables of a file, ``NeighbourGrid`` answers distance queries over
+/// coordinates, and ``CcdIndex`` reads a compiled Chemical Component
+/// Dictionary.
+///
+/// The examples assume ``import mmcif_io``.
+///
+/// Examples
+/// --------
+/// >>> structure = mmcif_io.read("1crn.bcif")
+/// >>> model = structure.models[0]
+/// >>> model.atom_count
+/// 327
+/// >>> model.coordinates.shape
+/// (327, 3)
 #[pymodule]
 fn mmcif_io(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();

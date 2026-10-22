@@ -7,9 +7,24 @@ use pyo3::exceptions::{
     PyFileNotFoundError, PyIsADirectoryError, PyOSError, PyPermissionError, PyValueError,
 };
 
-pyo3::create_exception!(mmcif_io, ReadError, PyValueError);
-pyo3::create_exception!(mmcif_io, NumberingError, PyValueError);
-pyo3::create_exception!(mmcif_io, AssemblyError, PyValueError);
+pyo3::create_exception!(
+    mmcif_io,
+    ReadError,
+    PyValueError,
+    "Raised when a file, text or bytes cannot be read as mmCIF, BinaryCIF, PDB\nor a component index.\n\nA subclass of ``ValueError``."
+);
+pyo3::create_exception!(
+    mmcif_io,
+    NumberingError,
+    PyValueError,
+    "Raised when a residue address has no counterpart in the other numbering\nscheme.\n\nA subclass of ``ValueError``."
+);
+pyo3::create_exception!(
+    mmcif_io,
+    AssemblyError,
+    PyValueError,
+    "Raised when a biological assembly cannot be built.\n\nA subclass of ``ValueError``."
+);
 
 pub fn read_error(error: impl Display) -> PyErr {
     ReadError::new_err(error.to_string())
