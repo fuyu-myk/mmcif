@@ -22,7 +22,7 @@ No reading failed or ran out of time.
 
 | Setting | Value |
 | --- | --- |
-| Source | `v0.2.1-8-gedf679c56988-dirty` |
+| Source | `4400e62d1f10` |
 | gemmi | 0.7.5 |
 | Coordinate tolerance | 0.001 Å |
 | Time limit per reading | 300 s |
