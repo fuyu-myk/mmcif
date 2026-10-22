@@ -4,11 +4,43 @@ use std::sync::OnceLock;
 use crate::document::{Cell, Span};
 use crate::value::{Value, ValueKind};
 
+/// A value of a numeric BinaryCIF column, as returned by
+/// [`Column::typed`](crate::Column::typed).
+///
+/// Integer columns, and fixed-point columns with a factor of 1, give
+/// [`Int`](TypedValue::Int). Other numeric columns give
+/// [`Float`](TypedValue::Float).
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_cif::{Document, TypedValue};
+///
+/// # let bytes = b"\x81\xaadataBlocks\x91\x82\xa6header\xa41ABC\xaacategories\x91\x83\
+/// #     \xa4name\xa5_atom\xa8rowCount\x02\xa7columns\x91\x82\xa4name\xa2id\xa4data\
+/// #     \x82\xa4data\xc4\x02\x01\x02\xa8encoding\x91\x82\xa4kind\xa9ByteArray\xa4type\x01";
+/// let document = Document::from_bcif(bytes)?;
+/// let atoms = document.block(0).unwrap().category("atom").unwrap();
+/// let ids = atoms.column("id").unwrap();
+///
+/// let total: i64 = (0..ids.len())
+///     .filter_map(|row| match ids.typed(row) {
+///         Some(TypedValue::Int(id)) => Some(id),
+///         _ => None,
+///     })
+///     .sum();
+/// assert_eq!(total, 3);
+/// # Ok::<(), mmcif_cif::BcifError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypedValue {
+    /// An integer.
     Int(i64),
+    /// A floating-point number.
     Float(f64),
+    /// The inapplicable null, written `.`.
     Inapplicable,
+    /// The unknown null, written `?`.
     Unknown,
 }
 

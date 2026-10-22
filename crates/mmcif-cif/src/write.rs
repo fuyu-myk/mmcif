@@ -113,6 +113,33 @@ impl<W: Write> CifWriter<W> {
 }
 
 impl Document {
+    /// Writes the document to `out` as CIF text.
+    ///
+    /// Each block starts with its `data_` header line and a `#` line, and
+    /// each entry of the block is followed by a `#` line. A pair is written as
+    /// its tag followed by its value, a loop as `loop_`, its tags one per line
+    /// and then its rows, each starting on a new line, and a save frame as its
+    /// entries between `save_` lines. Values keep their kind, so quoted values
+    /// are written in their quotes, and a text field starts on a new line and
+    /// ends with a line holding only `;`. Parsing the output gives a document
+    /// equal to this one.
+    ///
+    /// # Errors
+    ///
+    /// Returns any I/O error from writing to or flushing `out`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_cif::Document;
+    ///
+    /// let document = Document::parse("data_x\n_struct.title   'two words'\n")?;
+    ///
+    /// let mut out = Vec::new();
+    /// document.write_to(&mut out)?;
+    /// assert_eq!(out, b"data_x\n#\n_struct.title 'two words'\n#\n");
+    /// # Ok::<(), mmcif_cif::Error>(())
+    /// ```
     pub fn write_to(&self, out: impl Write) -> io::Result<()> {
         let mut writer = CifWriter {
             out: io::BufWriter::new(out),
@@ -124,6 +151,23 @@ impl Document {
         writer.out.flush()
     }
 
+    /// Returns the document as CIF text, in the layout of
+    /// [`Document::write_to`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_cif::Document;
+    ///
+    /// let text = "data_x\n_a.note\n;line one\nline two\n;\nloop_\n_b.id _b.name\n1 N 2 'C A'\n";
+    /// let document = Document::parse(text)?;
+    ///
+    /// assert_eq!(
+    ///     document.to_cif_string(),
+    ///     "data_x\n#\n_a.note\n;line one\nline two\n;\n#\nloop_\n_b.id\n_b.name\n1 N\n2 'C A'\n#\n"
+    /// );
+    /// # Ok::<(), mmcif_cif::ParseError>(())
+    /// ```
     pub fn to_cif_string(&self) -> String {
         let mut out = Vec::new();
         self.write_to(&mut out)

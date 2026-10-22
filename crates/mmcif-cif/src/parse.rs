@@ -203,12 +203,31 @@ impl Iterator for Parser<'_> {
     }
 }
 
+/// An iterator that parses the data blocks of CIF text one at a time.
+///
+/// Each item is a [`StreamedBlock`] or the [`ParseError`] that stopped
+/// parsing, and no items follow an error. It is returned by
+/// [`stream_blocks`](crate::stream_blocks).
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_cif::{BlockStream, ParseErrorKind};
+///
+/// let mut stream = BlockStream::new("data_a\n_x.y 1\ndata_b\n_x.y\ndata_c\n_x.y 3\n");
+///
+/// assert_eq!(stream.next().unwrap()?.block().name(), "a");
+/// assert_eq!(stream.next().unwrap().err().unwrap().kind, ParseErrorKind::MissingValue);
+/// assert!(stream.next().is_none());
+/// # Ok::<(), mmcif_cif::ParseError>(())
+/// ```
 pub struct BlockStream<'a> {
     parser: Option<Parser<'a>>,
     error: Option<ParseError>,
 }
 
 impl<'a> BlockStream<'a> {
+    /// Creates a stream over the blocks of `src`, as [`stream_blocks`](crate::stream_blocks) does.
     pub fn new(src: &'a str) -> Self {
         match Parser::new(src) {
             Ok(parser) => BlockStream {
