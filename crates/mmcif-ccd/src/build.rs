@@ -9,6 +9,22 @@ use crate::error::CcdError;
 use crate::format::{DIRECTORY_ENTRY_LEN, FORMAT_VERSION, IdKey, MAGIC, id_key, key_id};
 use crate::record::encode_record;
 
+/// Counts of what [`IndexBuilder::finish`] wrote to an index.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ccd::build_index;
+///
+/// let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+/// let mut bytes = Vec::new();
+/// let summary = build_index(dictionary, "2026-10-20", &mut bytes)?;
+///
+/// assert_eq!(summary.components(), 8);
+/// assert_eq!((summary.atoms(), summary.bonds()), (232, 240));
+/// assert_eq!(summary.bytes(), bytes.len() as u64);
+/// # Ok::<(), mmcif_ccd::CcdError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildSummary {
     components: usize,
@@ -18,18 +34,22 @@ pub struct BuildSummary {
 }
 
 impl BuildSummary {
+    /// Returns the number of components in the index.
     pub fn components(&self) -> usize {
         self.components
     }
 
+    /// Returns the total number of atoms across all components.
     pub fn atoms(&self) -> usize {
         self.atoms
     }
 
+    /// Returns the total number of bonds across all components.
     pub fn bonds(&self) -> usize {
         self.bonds
     }
 
+    /// Returns the number of bytes written.
     pub fn bytes(&self) -> u64 {
         self.bytes
     }
@@ -47,6 +67,29 @@ impl PendingRecord {
     }
 }
 
+/// Collects components and writes them as an index for one dictionary release.
+///
+/// Components can be added in any order; the index stores them sorted by id.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ccd::{CcdIndex, Component, IndexBuilder};
+/// use mmcif_cif::Document;
+///
+/// let document = Document::parse(include_str!("../tests/fixtures/components-sample.cif"))?;
+///
+/// let mut builder = IndexBuilder::new("2026-10-20");
+/// for block in document.blocks() {
+///     builder.add(&Component::from_block(block)?)?;
+/// }
+/// let mut bytes = Vec::new();
+/// builder.finish(&mut bytes)?;
+///
+/// let index = CcdIndex::from_bytes(bytes)?;
+/// assert_eq!(index.len(), 8);
+/// # Ok::<(), mmcif_ccd::CcdError>(())
+/// ```
 pub struct IndexBuilder {
     release: String,
     pending: Vec<PendingRecord>,
@@ -56,6 +99,10 @@ pub struct IndexBuilder {
 }
 
 impl IndexBuilder {
+    /// Creates an empty builder for the dictionary release named `release`.
+    ///
+    /// The release is recorded in the index and returned by
+    /// [`CcdIndex::release`](crate::CcdIndex::release).
     pub fn new(release: &str) -> Self {
         IndexBuilder {
             release: release.to_owned(),
@@ -66,6 +113,30 @@ impl IndexBuilder {
         }
     }
 
+    /// Adds `component` to the index.
+    ///
+    /// Repeated ids are reported by [`finish`](IndexBuilder::finish).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::IdTooLong`] if the component id is longer than 8
+    /// bytes, and [`CcdError::InvalidId`] if it is empty or contains a
+    /// whitespace, control or non-ASCII character.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{Component, IndexBuilder};
+    /// use mmcif_cif::Document;
+    ///
+    /// let document = Document::parse("data_ZN\n_chem_comp.id ZN\n")?;
+    /// let zinc = Component::from_block(document.block(0).unwrap())?;
+    ///
+    /// let mut builder = IndexBuilder::new("2026-10-20");
+    /// builder.add(&zinc)?;
+    /// assert_eq!(builder.len(), 1);
+    /// # Ok::<(), mmcif_ccd::CcdError>(())
+    /// ```
     pub fn add(&mut self, component: &Component) -> Result<(), CcdError> {
         let key = id_key(component.id())?;
         let start = self.records.len();
@@ -80,14 +151,46 @@ impl IndexBuilder {
         Ok(())
     }
 
+    /// Returns the number of components added.
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
+    /// Returns `true` if no components have been added.
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
+    /// Writes the index to `out`, flushes `out` and returns a summary of what
+    /// was written.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::DuplicateId`] if two added components have the same
+    /// id, in which case nothing is written, and [`CcdError::Io`] if writing to
+    /// `out` fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{CcdError, Component, IndexBuilder};
+    /// use mmcif_cif::Document;
+    ///
+    /// let document = Document::parse("data_ZN\n_chem_comp.id ZN\n")?;
+    /// let zinc = Component::from_block(document.block(0).unwrap())?;
+    ///
+    /// let mut builder = IndexBuilder::new("2026-10-20");
+    /// builder.add(&zinc)?;
+    /// let mut bytes = Vec::new();
+    /// assert_eq!(builder.finish(&mut bytes)?.components(), 1);
+    ///
+    /// let mut repeated = IndexBuilder::new("2026-10-20");
+    /// repeated.add(&zinc)?;
+    /// repeated.add(&zinc)?;
+    /// let error = repeated.finish(Vec::new()).unwrap_err();
+    /// assert!(matches!(error, CcdError::DuplicateId { id } if id == "ZN"));
+    /// # Ok::<(), CcdError>(())
+    /// ```
     pub fn finish(mut self, mut out: impl Write) -> Result<BuildSummary, CcdError> {
         self.pending.sort_unstable_by_key(|record| record.key);
         if let Some(pair) = self
@@ -134,6 +237,34 @@ impl IndexBuilder {
     }
 }
 
+/// Compiles the Chemical Component Dictionary in `source_text` into an index
+/// for the release named `release`, writes it to `out` and returns a summary.
+///
+/// `source_text` is CIF with one data block per component, as in
+/// `components.cif`. Each block is read with [`Component::from_block`].
+///
+/// # Errors
+///
+/// Returns [`CcdError::Parse`] if `source_text` is not valid CIF, any error of
+/// [`Component::from_block`] for a block that cannot be read as a component,
+/// any error of [`IndexBuilder::add`] for a component id that cannot be
+/// stored, [`CcdError::DuplicateId`] if two blocks have the same component id,
+/// and [`CcdError::Io`] if writing to `out` fails.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ccd::{CcdIndex, build_index};
+///
+/// let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+/// let mut bytes = Vec::new();
+/// let summary = build_index(dictionary, "2026-10-20", &mut bytes)?;
+/// assert_eq!(summary.components(), 8);
+///
+/// let index = CcdIndex::from_bytes(bytes)?;
+/// assert_eq!(index.get("HOH")?.unwrap().name(), "WATER");
+/// # Ok::<(), mmcif_ccd::CcdError>(())
+/// ```
 pub fn build_index(
     source_text: &str,
     release: &str,
@@ -146,6 +277,26 @@ pub fn build_index(
     builder.finish(out)
 }
 
+/// Reads the Chemical Component Dictionary file at `source` and compiles it
+/// into an index for the release named `release`, as [`build_index`] does.
+///
+/// # Errors
+///
+/// Returns [`CcdError::Io`] if the file cannot be read or is not valid UTF-8,
+/// and otherwise any error of [`build_index`].
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ccd::build_index_from_file;
+///
+/// # let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/components-sample.cif");
+/// let mut bytes = Vec::new();
+/// let summary = build_index_from_file(source, "2026-10-20", &mut bytes)?;
+///
+/// assert_eq!(summary.components(), 8);
+/// # Ok::<(), mmcif_ccd::CcdError>(())
+/// ```
 pub fn build_index_from_file(
     source: impl AsRef<Path>,
     release: &str,

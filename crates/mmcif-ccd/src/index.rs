@@ -56,37 +56,164 @@ fn validate_directory(directory: &[u8]) -> Result<(), CcdError> {
     Ok(())
 }
 
+/// A compiled Chemical Component Dictionary index, held in memory, that
+/// returns components by id.
+///
+/// The index records the name of the dictionary release it was built from.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_ccd::{CcdIndex, build_index};
+///
+/// # let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+/// let mut bytes = Vec::new();
+/// build_index(dictionary, "2026-10-20", &mut bytes)?;
+/// let index = CcdIndex::from_bytes(bytes)?;
+///
+/// assert_eq!(index.release(), "2026-10-20");
+/// assert_eq!(index.get("ZN")?.unwrap().formal_charge(), 2);
+/// assert_eq!(index.get("XXX")?, None);
+/// # Ok::<(), mmcif_ccd::CcdError>(())
+/// ```
 pub struct CcdIndex {
     bytes: Vec<u8>,
     layout: Layout,
 }
 
 impl CcdIndex {
+    /// Reads the index file at `path` into memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::Io`] if the file cannot be read, and otherwise any
+    /// error of [`CcdIndex::from_bytes`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs::File;
+    ///
+    /// use mmcif_ccd::{CcdIndex, build_index};
+    ///
+    /// # let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+    /// let path = std::env::temp_dir().join("mmcif-ccd-open-example.idx");
+    /// build_index(dictionary, "2026-10-20", File::create(&path)?)?;
+    ///
+    /// let index = CcdIndex::open(&path)?;
+    /// assert_eq!(index.len(), 8);
+    /// # std::fs::remove_file(&path)?;
+    /// # Ok::<(), mmcif_ccd::CcdError>(())
+    /// ```
     pub fn open(path: impl AsRef<Path>) -> Result<CcdIndex, CcdError> {
         CcdIndex::from_bytes(std::fs::read(path)?)
     }
 
+    /// Reads an index from `bytes`, as written by [`build_index`] or
+    /// [`IndexBuilder::finish`].
+    ///
+    /// The header and the id directory are checked here. Each component
+    /// record is checked when [`get`](CcdIndex::get) reads it.
+    ///
+    /// [`build_index`]: crate::build_index
+    /// [`IndexBuilder::finish`]: crate::IndexBuilder::finish
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::BadMagic`] if `bytes` does not begin with the
+    /// signature of a component index, [`CcdError::UnsupportedVersion`] if the
+    /// index was written in a format version this crate does not read, and
+    /// [`CcdError::CorruptIndex`] if the header or the id directory is
+    /// truncated or malformed, or the directory ids are not in strictly
+    /// ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{CcdError, CcdIndex, build_index};
+    ///
+    /// # let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+    /// let mut bytes = Vec::new();
+    /// build_index(dictionary, "2026-10-20", &mut bytes)?;
+    ///
+    /// let index = CcdIndex::from_bytes(bytes)?;
+    /// assert_eq!(index.len(), 8);
+    ///
+    /// let error = CcdIndex::from_bytes(Vec::new()).unwrap_err();
+    /// assert!(matches!(error, CcdError::BadMagic));
+    /// # Ok::<(), CcdError>(())
+    /// ```
     pub fn from_bytes(bytes: Vec<u8>) -> Result<CcdIndex, CcdError> {
         let layout = Layout::read(&bytes)?;
         Ok(CcdIndex { bytes, layout })
     }
 
+    /// Returns the name of the dictionary release given when the index was
+    /// built.
     pub fn release(&self) -> &str {
         &self.layout.release
     }
 
+    /// Returns the number of components in the index.
     pub fn len(&self) -> usize {
         self.layout.count
     }
 
+    /// Returns `true` if the index holds no components.
     pub fn is_empty(&self) -> bool {
         self.layout.count == 0
     }
 
+    /// Returns an iterator over the component ids in the index, in ascending
+    /// byte order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{CcdIndex, build_index};
+    ///
+    /// # let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+    /// # let mut bytes = Vec::new();
+    /// # build_index(dictionary, "2026-10-20", &mut bytes)?;
+    /// let index = CcdIndex::from_bytes(bytes)?;
+    ///
+    /// let ids: Vec<&str> = index.ids().collect();
+    /// assert_eq!(ids, ["A1AAA", "ALA", "ATP", "HEM", "HOH", "MSE", "NAG", "ZN"]);
+    /// # Ok::<(), mmcif_ccd::CcdError>(())
+    /// ```
     pub fn ids(&self) -> impl Iterator<Item = &str> + '_ {
         (0..self.len()).filter_map(|index| self.entry(index).get(..MAX_ID_LEN).and_then(key_id))
     }
 
+    /// Returns the component with id `id`, or `None` if the index does not
+    /// hold it.
+    ///
+    /// Ids are matched exactly, including case. An id that cannot be stored
+    /// in an index, such as an empty id or one longer than 8 bytes, returns
+    /// `None`. The component is decoded from the index on each call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::CorruptIndex`] if the record for `id` is truncated
+    /// or malformed, or holds a component with a different id.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{CcdIndex, build_index};
+    ///
+    /// # let dictionary = include_str!("../tests/fixtures/components-sample.cif");
+    /// # let mut bytes = Vec::new();
+    /// # build_index(dictionary, "2026-10-20", &mut bytes)?;
+    /// let index = CcdIndex::from_bytes(bytes)?;
+    ///
+    /// let selenomethionine = index.get("MSE")?.unwrap();
+    /// assert_eq!(selenomethionine.parent(), Some("MET"));
+    ///
+    /// assert_eq!(index.get("mse")?, None);
+    /// assert_eq!(index.get("NOT-AN-ID")?, None);
+    /// # Ok::<(), mmcif_ccd::CcdError>(())
+    /// ```
     pub fn get(&self, id: &str) -> Result<Option<Component>, CcdError> {
         let Ok(key) = id_key(id) else {
             return Ok(None);

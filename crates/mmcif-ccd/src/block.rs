@@ -71,6 +71,47 @@ fn parse_flag(text: &str) -> Option<bool> {
 }
 
 impl Component {
+    /// Reads a component from one data block of the Chemical Component
+    /// Dictionary.
+    ///
+    /// The component is read from the first row of `_chem_comp`, its atoms
+    /// from `_chem_comp_atom` and its bonds from `_chem_comp_bond`. An item
+    /// that is missing or holds `?` or `.` is absent. An absent name, type or
+    /// release status reads as an empty string, an absent formula, parent or
+    /// one-letter code as `None`, an absent charge as 0, an absent flag as
+    /// `false`, and an absent stereo configuration as [`AtomStereo::None`] or
+    /// [`BondStereo::None`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CcdError::MissingItem`] if `_chem_comp.id` is absent, an atom
+    /// lacks `atom_id` or `type_symbol`, or a bond lacks `atom_id_1`,
+    /// `atom_id_2` or `value_order`; [`CcdError::TooManyAtoms`] if the block
+    /// lists more than 65,536 atoms; [`CcdError::InvalidValue`] if the formal
+    /// charge is not an integer that fits in an `i32`, an atom charge is not
+    /// an integer that fits in an `i8`, an aromatic or leaving atom flag is
+    /// not `Y` or `N` in either case, or a stereo configuration is not a code
+    /// that [`AtomStereo::from_code`] or [`BondStereo::from_code`] accepts;
+    /// [`CcdError::UnknownBondAtom`] if a bond names an atom that is not in
+    /// `_chem_comp_atom`; and [`CcdError::UnknownBondOrder`] if a bond order
+    /// is not a code that [`BondOrder::from_code`] accepts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_ccd::{CcdError, Component};
+    /// use mmcif_cif::Document;
+    ///
+    /// let document = Document::parse(include_str!("../tests/fixtures/components-sample.cif"))?;
+    /// let alanine = Component::from_block(document.block(0).unwrap())?;
+    /// assert_eq!(alanine.id(), "ALA");
+    /// assert_eq!(alanine.one_letter_code(), Some("A"));
+    ///
+    /// let unnamed = Document::parse("data_X\n_chem_comp.name x\n")?;
+    /// let error = Component::from_block(unnamed.block(0).unwrap()).unwrap_err();
+    /// assert!(matches!(error, CcdError::MissingItem { item, .. } if item == "_chem_comp.id"));
+    /// # Ok::<(), CcdError>(())
+    /// ```
     pub fn from_block(block: Block<'_>) -> Result<Component, CcdError> {
         let chem_comp = Table::new(block, "chem_comp");
         let id = chem_comp.required("id", 0)?.to_owned();
