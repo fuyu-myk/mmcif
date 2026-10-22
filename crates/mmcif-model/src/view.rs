@@ -502,12 +502,12 @@ impl<'a> AtomRef<'a> {
         self.model.atoms.positions[self.at()]
     }
 
-    /// Returns the occupancy.
+    /// Returns the occupancy, or 1.0 if the file gives none.
     pub fn occupancy(&self) -> f64 {
         self.model.atoms.occupancies[self.at()]
     }
 
-    /// Returns the isotropic B-factor.
+    /// Returns the isotropic B-factor, or 0.0 if the file gives none.
     pub fn b_factor(&self) -> f64 {
         self.model.atoms.b_factors[self.at()]
     }

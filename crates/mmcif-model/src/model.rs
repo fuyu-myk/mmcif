@@ -312,11 +312,15 @@ impl Model {
     }
 
     /// Returns the occupancy of every atom, by atom index.
+    ///
+    /// An atom whose file gives no occupancy has 1.0.
     pub fn occupancies(&self) -> &[f64] {
         &self.atoms.occupancies
     }
 
     /// Returns the isotropic B-factor of every atom, by atom index.
+    ///
+    /// An atom whose file gives no B-factor has 0.0.
     pub fn b_factors(&self) -> &[f64] {
         &self.atoms.b_factors
     }
