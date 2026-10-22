@@ -1,7 +1,8 @@
 [[explained]]
-entry = "1m4x"
+example = "3zue"
 category = "assembly_set"
-reason = "gemmi 0.7.5 drops assemblies whose _pdbx_struct_assembly.details it does not recognise; assemblies 2 to 7 are only in ours"
+match = "only in ours"
+reason = "gemmi 0.7.5 drops assemblies whose _pdbx_struct_assembly.details it does not recognise, such as 'icosahedral asymmetric unit', 'helical asymmetric unit', 'point asymmetric unit' and 'crystal asymmetric unit, crystal frame'. Checked on all 13 entries this covered in October 2026 by relabelling every details value as author_defined_assembly: gemmi then reports these assemblies and agrees with ours, except on composite expressions such as (X0)(1-60), of which it expands only the first group (see 1m4x); there ours matches oligomeric_count in 1ihm, 1rui, 2buk and 7c9t"
 
 [[explained]]
 entry = "1m4x"
@@ -16,6 +17,7 @@ match = "assembly 1:"
 reason = "same composite expression as the assembly_atom_count rule"
 
 [[explained]]
-entry = "2buk"
-category = "assembly_set"
-reason = "gemmi 0.7.5 drops assemblies whose _pdbx_struct_assembly.details it does not recognise; with the details relabelled gemmi agrees on assemblies 2 to 5, and assembly 6 (X0)(1-60) gives 300 copies in ours like assembly 1 while gemmi expands only (X0)"
+entry = "8zzt"
+category = "b_iso"
+match = "0.0 vs 20.0"
+reason = "8zzt is an integrative model and gives '.' for every _atom_site.B_iso_or_equiv. Ours reads a missing B-factor as 0.0 and gemmi 0.7.5 as 20.0; neither value is in the file"
