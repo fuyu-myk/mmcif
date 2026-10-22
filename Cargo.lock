@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-ccd"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-cif",
  "proptest",
@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-cif"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "criterion",
  "memchr",
@@ -403,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-ir",
  "mmcif-lower",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-geom"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "criterion",
  "proptest",
@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-ir"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-model",
  "proptest",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-lower"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-ir",
  "mmcif-model",
@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-model"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "criterion",
  "mmcif-cif",
@@ -466,7 +466,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-py"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-ccd",
  "mmcif-cif",
@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-spec"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "mmcif-ir",
  "mmcif-model",
