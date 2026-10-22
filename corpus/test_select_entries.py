@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -142,6 +143,47 @@ class SeverityTest(unittest.TestCase):
 
     def test_every_class_has_a_severity(self):
         self.assertEqual(set(select_entries.SEVERITY), set(classify.PATHOLOGY_PREDICATES))
+
+
+REVISION_HISTORY = (
+    "loop_\n_pdbx_audit_revision_history.ordinal\n_pdbx_audit_revision_history.data_content_type\n"
+    "_pdbx_audit_revision_history.major_revision\n_pdbx_audit_revision_history.minor_revision\n"
+    "_pdbx_audit_revision_history.revision_date\n"
+    "1 'Structure model' 1 0 1984-07-17\n2 'Structure model' 1 10 2008-03-03\n"
+    "3 'Structure model' 2 0 2020-06-17\n4 'Structure factors' 2 1 2023-01-01\n"
+)
+
+
+class RevisionTest(unittest.TestCase):
+    def test_the_latest_structure_model_revision_is_taken(self):
+        entry = block(atom_site(residue("A", "1", "GLY", "1")), REVISION_HISTORY)
+        self.assertEqual(select_entries.latest_revision(entry), {"revision": "2.0", "revision_date": "2020-06-17"})
+
+    def test_an_entry_without_a_history_has_no_revision(self):
+        self.assertEqual(select_entries.latest_revision(block(atom_site(residue("A", "1", "GLY", "1")))), {})
+
+
+class PinTest(unittest.TestCase):
+    def test_a_pin_records_both_hashes_and_the_revision(self):
+        text = "data_1abc\n" + atom_site(residue("A", "1", "GLY", "1")) + REVISION_HISTORY
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(select_entries, "DATA_DIR", Path(directory)):
+            Path(directory, "1abc.cif").write_text(text)
+            Path(directory, "1abc.bcif").write_bytes(b"binary")
+            self.assertEqual(select_entries.pin_entry("1abc"), ("1abc", {
+                "cif": hashlib.sha256(text.encode()).hexdigest(),
+                "bcif": hashlib.sha256(b"binary").hexdigest(),
+                "revision": "2.0",
+                "revision_date": "2020-06-17",
+            }))
+
+    def test_a_missing_file_is_reported_by_id(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(select_entries, "DATA_DIR", Path(directory)):
+            Path(directory, "1abc.cif").write_text("data_1abc\n")
+            self.assertEqual(select_entries.pin_entry("1abc"), ("1abc", "1abc.bcif not downloaded"))
+
+    def test_the_run_covers_the_seed_the_baseline_and_every_chosen_entry(self):
+        corpus = {"baseline": ["2abc", "3abc"], "classes": {"altlocs": ["1abc", "4abc"], "branched": ["4abc", "5abc"]}}
+        self.assertEqual(select_entries.run_ids(corpus, {"1abc": [], "6abc": []}), ["1abc", "2abc", "3abc", "4abc", "5abc", "6abc"])
 
 
 class ClassifyFileTest(unittest.TestCase):

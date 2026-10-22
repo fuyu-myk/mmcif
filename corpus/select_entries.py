@@ -159,6 +159,41 @@ def classify_file(identifier: str) -> tuple[str, dict[str, int] | str]:
         return identifier, f"{type(error).__name__}: {error}"
 
 
+def revision_key(row: tuple[str, str, str, str]) -> tuple[int, int]:
+    return int(row[1]), int(row[2])
+
+
+def latest_revision(block: cif.Block) -> dict[str, str]:
+    rows = zip(
+        column(block, "_pdbx_audit_revision_history.data_content_type"),
+        column(block, "_pdbx_audit_revision_history.major_revision"),
+        column(block, "_pdbx_audit_revision_history.minor_revision"),
+        column(block, "_pdbx_audit_revision_history.revision_date"),
+    )
+    models = [row for row in rows if row[0] == "Structure model"]
+    if not models:
+        return {}
+    _, major, minor, date = max(models, key=revision_key)
+    return {"revision": f"{major}.{minor}", "revision_date": date}
+
+
+def pin_entry(identifier: str) -> tuple[str, dict[str, str] | str]:
+    paths = {extension: DATA_DIR / f"{identifier}.{extension}" for extension, _, _ in fetch.SOURCES}
+    for path in paths.values():
+        if not path.exists():
+            return identifier, f"{path.name} not downloaded"
+    try:
+        revision = latest_revision(cif.read(str(paths["cif"])).sole_block())
+    except (RuntimeError, ValueError, IndexError) as error:
+        return identifier, f"{type(error).__name__}: {error}"
+    return identifier, {extension: fetch.sha256_of(path) for extension, path in paths.items()} | revision
+
+
+def run_ids(corpus: dict, seed: dict[str, list[str]]) -> list[str]:
+    chosen = {identifier for members in corpus["classes"].values() for identifier in members}
+    return sorted(set(seed) | set(corpus["baseline"]) | chosen)
+
+
 def fill_classes(seed: dict[str, list[str]], candidates: dict[str, dict[str, int]], size: int) -> dict[str, list[str]]:
     filled = {}
     for name in classify.PATHOLOGY_PREDICATES:
@@ -197,20 +232,29 @@ def draw(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def report_failures(results: dict[str, object], action: str) -> bool:
+    failures = {identifier: result for identifier, result in results.items() if isinstance(result, str)}
+    for identifier, reason in sorted(failures.items()):
+        print(f"FAILED {identifier}: {reason}")
+    if failures:
+        print(f"{len(failures)} of {len(results)} entries could not be {action}; run corpus/fetch.py --corpus corpus/full.json first")
+    return bool(failures)
+
+
 def classify_corpus(arguments: argparse.Namespace) -> int:
     corpus = json.loads(CORPUS_PATH.read_text())
     seed = json.loads(classify.MANIFEST_PATH.read_text())
     with ProcessPoolExecutor(arguments.jobs) as pool:
-        results = dict(pool.map(classify_file, fetch.corpus_ids(corpus), chunksize=16))
-    failures = {identifier: result for identifier, result in results.items() if isinstance(result, str)}
-    if failures:
-        for identifier, reason in sorted(failures.items()):
-            print(f"FAILED {identifier}: {reason}")
-        print(f"{len(failures)} of {len(results)} candidates could not be classified; run corpus/fetch.py --corpus corpus/full.json first")
-        return 1
-    corpus["entries"] = results
-    corpus["class_size"] = arguments.size
-    corpus["classes"] = fill_classes(seed, results, arguments.size)
+        results = dict(pool.map(classify_file, fetch.candidate_ids(corpus), chunksize=16))
+        if report_failures(results, "classified"):
+            return 1
+        corpus["entries"] = results
+        corpus["class_size"] = arguments.size
+        corpus["classes"] = fill_classes(seed, results, arguments.size)
+        pins = dict(pool.map(pin_entry, run_ids(corpus, seed), chunksize=16))
+        if report_failures(pins, "pinned"):
+            return 1
+    corpus["pins"] = pins
     write_corpus(corpus)
     members: dict[str, int] = defaultdict(int)
     for found in results.values():
@@ -218,6 +262,7 @@ def classify_corpus(arguments: argparse.Namespace) -> int:
             members[name] += 1
     for name, chosen in corpus["classes"].items():
         print(f"{name:22s} {len(chosen):3d} chosen from {members[name]:5d} candidates")
+    print(f"{len(pins)} entries pinned")
     return 0
 
 

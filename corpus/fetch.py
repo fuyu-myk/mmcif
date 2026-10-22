@@ -1,5 +1,6 @@
 import argparse
 import gzip
+import hashlib
 import http.client
 import json
 import sys
@@ -17,6 +18,7 @@ USER_AGENT = "mmcif-corpus-fetch/1.0 (differential test corpus)"
 REQUEST_TIMEOUT_SECONDS = 60
 DEFAULT_DELAY_SECONDS = 0.5
 MAX_ATTEMPTS = 3
+HASH_CHUNK_BYTES = 1 << 20
 TRANSFER_ERRORS = (OSError, http.client.HTTPException, EOFError)
 
 SOURCES = (
@@ -32,9 +34,31 @@ def load_candidate_ids(path: Path) -> list[str]:
     return sorted(ids)
 
 
-def corpus_ids(corpus: dict) -> list[str]:
+def candidate_ids(corpus: dict) -> list[str]:
     pooled = [identifier for pool in corpus["pools"].values() for identifier in pool["ids"]]
     return sorted({identifier.lower() for identifier in corpus["baseline"] + pooled})
+
+
+def corpus_ids(corpus: dict) -> list[str]:
+    return sorted(set(candidate_ids(corpus)) | set(corpus.get("pins", {})))
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(HASH_CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def changed_files(pins: dict[str, dict[str, str]]) -> list[str]:
+    changed = []
+    for identifier, pin in sorted(pins.items()):
+        for extension, _, _ in SOURCES:
+            path = DATA_DIR / f"{identifier}.{extension}"
+            if path.exists() and sha256_of(path) != pin[extension]:
+                changed.append(path.name)
+    return changed
 
 
 def download(url: str, destination: Path, compressed: bool) -> int:
@@ -109,16 +133,24 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
+    pins = {}
     if arguments.ids:
         ids = sorted({i.lower() for i in arguments.ids})
     elif arguments.corpus:
-        ids = corpus_ids(json.loads(arguments.corpus.read_text()))
+        corpus = json.loads(arguments.corpus.read_text())
+        ids = corpus_ids(corpus)
+        pins = corpus.get("pins", {})
     else:
         ids = load_candidate_ids(CANDIDATES_PATH)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     failures, downloaded_bytes = fetch_all(ids, arguments.delay, arguments.workers)
-    print(f"{len(ids)} ids, {downloaded_bytes} bytes downloaded, {len(failures)} failures")
-    return 1 if failures else 0
+    changed = changed_files(pins)
+    for name in changed:
+        print(f"CHANGED {name} differs from its pin in {arguments.corpus}")
+    if changed:
+        print("run corpus/select_entries.py classify to pin the new files, and commit the result")
+    print(f"{len(ids)} ids, {downloaded_bytes} bytes downloaded, {len(failures)} failures, {len(changed)} changed")
+    return 1 if failures or changed else 0
 
 
 if __name__ == "__main__":
