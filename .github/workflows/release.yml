@@ -65,6 +65,16 @@ jobs:
         with:
           merge-multiple: true
           path: dist
-      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      - name: Release notes from the tag annotation
+        run: |
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
+          if [ "$(jq -r .object.type <<<"$ref")" = tag ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .message | sed '1,2d' > notes.md
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: |
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "${notes[@]}" --verify-tag
         env:
           GH_TOKEN: ${{ github.token }}
