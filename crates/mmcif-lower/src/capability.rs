@@ -1,15 +1,40 @@
 use mmcif_ir::{Constraint, Geometry, Identity, Slot, Spec};
 use mmcif_spec::{Design, Diagnostic, SegmentKind, Severity, SourceId, Span};
 
+/// What a [`Backend`](crate::Backend) can express.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_lower::Backend;
+///
+/// let rfd3 = Backend::Rfd3.capabilities();
+///
+/// assert_eq!(rfd3.name, "rfd3");
+/// assert!(!rfd3.secondary_structure);
+/// assert_eq!(rfd3.inputs, Some(1));
+/// ```
 #[non_exhaustive]
 pub struct Capabilities {
+    /// The name of the backend, as accepted by
+    /// [`Backend::named`](crate::Backend::named).
     pub name: &'static str,
+    /// The version of the backend's input format that the output is written
+    /// against.
     pub schema: &'static str,
+    /// Whether a residue without fixed coordinates can have a fixed or
+    /// restricted identity.
     pub designed_identity: bool,
+    /// Whether bond constraints can be expressed.
     pub bonds: bool,
+    /// Whether distance constraints can be expressed.
     pub distances: bool,
+    /// Whether secondary structure constraints can be expressed.
     pub secondary_structure: bool,
+    /// Whether ligands can be expressed.
     pub ligands: bool,
+    /// The largest number of distinct structure files the input can name, or
+    /// `None` for no limit.
     pub inputs: Option<usize>,
 }
 
