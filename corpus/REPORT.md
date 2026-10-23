@@ -22,7 +22,7 @@ No reading failed or ran out of time.
 
 | Setting | Value |
 | --- | --- |
-| Source | `4400e62d1f10` |
+| Source | `d1150edabd63` |
 | gemmi | 0.7.5 |
 | Coordinate tolerance | 0.001 Å |
 | Time limit per reading | 300 s |
@@ -72,9 +72,9 @@ same composite expression as the assembly_atom_count rule
 
 ### b_iso in 8zzt
 
-8zzt is an integrative model and gives '.' for every _atom_site.B_iso_or_equiv. Ours reads a missing B-factor as 0.0 and gemmi 0.7.5 as 20.0; neither value is in the file
+8zzt is an integrative model and gives '.' for every _atom_site.B_iso_or_equiv. Ours reads a missing B-factor as missing (None per atom, NaN in arrays); gemmi 0.7.5 fills in 20.0, which is not in the file
 
-- Covers messages containing `0.0 vs 20.0`.
+- Covers messages containing `None vs 20.0`.
 - 187,550 differences in 1 entry: 8zzt
 
 ## Unexplained differences
