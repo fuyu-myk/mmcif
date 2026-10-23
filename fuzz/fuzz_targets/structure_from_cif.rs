@@ -11,7 +11,7 @@ fuzz_target!(|data: &[u8]| {
         if let Some(model) = structure.first_model() {
             model.single_conformer(AltlocPolicy::HighestOccupancy);
             for assembly in structure.assemblies() {
-                let _ = structure.assemble(assembly.id(), model);
+                let _ = structure.assemble(assembly.id().as_str(), model);
             }
         }
     }
