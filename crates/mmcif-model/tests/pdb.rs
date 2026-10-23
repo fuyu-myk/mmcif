@@ -246,6 +246,23 @@ fn atom_records_after_ter_start_a_new_polymer_chain() {
 }
 
 #[test]
+fn reads_a_formal_charge_written_as_a_bare_digit() {
+    let charges: Vec<Option<i8>> = [" 0", "0 ", " 2", "2+", "1-", "  "]
+        .iter()
+        .map(|field| {
+            let mut line = atom_line("HETATM", 1, "ZN", "ZN", 'A', 1);
+            line.replace_range(78..80, field);
+            let structure = parse_pdb(&line).unwrap();
+            structure.first_model().unwrap().charges()[0]
+        })
+        .collect();
+    assert_eq!(
+        charges,
+        [Some(0), Some(0), Some(2), Some(2), Some(-1), None]
+    );
+}
+
+#[test]
 fn rejects_malformed_serials_and_charges() {
     let mut bad_charge = atom_line("HETATM", 1, "ZN", "ZN", 'A', 1);
     bad_charge.replace_range(78..80, "+2");
