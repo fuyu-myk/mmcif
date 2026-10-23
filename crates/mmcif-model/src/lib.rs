@@ -65,6 +65,8 @@ pub use key::{AuthResidueKey, LabelResidueKey, ResidueKey};
 pub use model::{AtomIndex, ChainIndex, Model, ResidueIndex};
 pub use numbering::{Numbering, NumberingError};
 pub use pdb::{parse_pdb, read_pdb};
-pub use read::{parse_bcif, parse_mmcif, read, read_bcif, read_mmcif};
+pub use read::{
+    Format, Loaded, ReadOptions, parse_bcif, parse_mmcif, read, read_bcif, read_mmcif, read_with,
+};
 pub use structure::Structure;
 pub use view::{AtomRef, ChainRef, ResidueRef};

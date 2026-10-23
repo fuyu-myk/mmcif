@@ -2,6 +2,7 @@ mod assemblies;
 mod atom_site;
 mod entities;
 mod numbering;
+mod options;
 mod table;
 
 use std::collections::HashMap;
@@ -16,6 +17,9 @@ use crate::ids::{EntityId, LabelAsymId};
 use crate::model::Model;
 use crate::pdb;
 use crate::structure::Structure;
+
+pub(crate) use options::Skipping;
+pub use options::{Format, Loaded, ReadOptions, read_with};
 
 impl Structure {
     /// Reads a structure from the first data block of `document`.
@@ -85,26 +89,64 @@ impl Structure {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn from_block(block: &Block<'_>) -> Result<Structure, ReadError> {
+        Structure::from_block_with(block, &ReadOptions::new()).map(|loaded| loaded.structure)
+    }
+
+    /// Reads a structure from one data block with `options`.
+    ///
+    /// The block is read as [`Structure::from_block`] reads it, except as
+    /// `options` change. [`Loaded::document`] is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Structure::from_block`], except those of the
+    /// optional groups that a lenient read skips.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_cif::Document;
+    /// use mmcif_model::{ReadOptions, Structure};
+    ///
+    /// # let text = include_str!("../../tests/fixtures/pathologies.cif");
+    /// let text = text.replace("1 1 AA,B,C,D", "1 ? AA,B,C,D");
+    /// let document = Document::parse(&text)?;
+    /// let block = document.block(0).unwrap();
+    ///
+    /// assert!(Structure::from_block(&block).is_err());
+    ///
+    /// let loaded = Structure::from_block_with(&block, &ReadOptions::new().lenient(true))?;
+    /// assert!(loaded.structure.assemblies().is_empty());
+    /// assert_eq!(loaded.skipped.len(), 1);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn from_block_with(block: &Block<'_>, options: &ReadOptions) -> Result<Loaded, ReadError> {
+        let mut skipping = options.skipping();
         let atom_site::AtomSite {
             mut models,
             has_author_numbering,
-        } = atom_site::read_models(block)?;
+        } = atom_site::read_models(block, options.reads_first_model_only())?;
         let entry_id = block
             .category("entry")
             .and_then(|entry| entry.column("id"))
             .and_then(|column| column.get(0))
             .and_then(|value| value.as_str())
             .map(str::to_owned);
-        let entities = entities::read_entities(block, &models)?;
+        let entities = skipping.or_default(entities::read_entities(block, &models))?;
         assign_missing_entities(&mut models, &entities);
-        Ok(Structure {
+        let numbering =
+            numbering::read_numbering(block, &models, has_author_numbering, &mut skipping)?;
+        let operators = skipping.or_default(assemblies::read_operators(block))?;
+        let assemblies = skipping.or_default(assemblies::read_assemblies(block))?;
+        let structure = Structure {
             entry_id,
-            numbering: numbering::read_numbering(block, &models, has_author_numbering)?,
+            numbering,
             entities,
             models: models.into_iter().map(Arc::new).collect(),
-            operators: assemblies::read_operators(block)?,
-            assemblies: assemblies::read_assemblies(block)?,
-        })
+            operators,
+            assemblies,
+        };
+        Ok(Loaded::new(structure, skipping.into_errors()))
     }
 }
 
@@ -243,14 +285,10 @@ pub fn read_bcif(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
 /// ```
 pub fn read(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
     let path = path.as_ref();
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase);
-    match extension.as_deref() {
-        Some("cif" | "mmcif") => read_mmcif(path),
-        Some("bcif") => read_bcif(path),
-        Some("pdb" | "ent") => pdb::read_pdb(path),
-        _ => Err(ReadError::UnknownFormat(path.display().to_string())),
+    match Format::from_path(path) {
+        Some(Format::Mmcif) => read_mmcif(path),
+        Some(Format::Bcif) => read_bcif(path),
+        Some(Format::Pdb) => pdb::read_pdb(path),
+        None => Err(ReadError::UnknownFormat(path.display().to_string())),
     }
 }

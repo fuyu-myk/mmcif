@@ -256,16 +256,27 @@ pub(crate) struct AtomSite {
     pub has_author_numbering: bool,
 }
 
-pub(crate) fn read_models(block: &Block<'_>) -> Result<AtomSite, ReadError> {
+pub(crate) fn read_models(
+    block: &Block<'_>,
+    first_model_only: bool,
+) -> Result<AtomSite, ReadError> {
     let table = Table::required(block, "atom_site")?;
     let fields = AtomSiteFields::new(&table)?;
     let rows = table.rows();
-    let single_model =
-        rows == 0 || fields.model.parse::<i32>(0)? == fields.model.parse::<i32>(rows - 1)?;
+    let single_model = rows == 0
+        || first_model_only
+        || fields.model.parse::<i32>(0)? == fields.model.parse::<i32>(rows - 1)?;
+    let first_number = match rows {
+        0 => None,
+        _ => Some(fields.model.parse::<i32>(0)?.unwrap_or(1)),
+    };
     let mut models: Vec<ModelState> = Vec::new();
     let mut model_index: HashMap<i32, usize> = HashMap::new();
     for row in 0..rows {
         let number = fields.model.parse::<i32>(row)?.unwrap_or(1);
+        if first_model_only && Some(number) != first_number {
+            continue;
+        }
         let index = *model_index.entry(number).or_insert_with(|| {
             let mut state = ModelState::new(number);
             if single_model && models.is_empty() {

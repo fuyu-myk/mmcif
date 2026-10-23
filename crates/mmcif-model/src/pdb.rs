@@ -10,6 +10,7 @@ use crate::ids::{
 use crate::key::AuthResidueKey;
 use crate::model::{AtomInput, Model, ModelBuilder};
 use crate::numbering::Numbering;
+use crate::read::{Loaded, ReadOptions};
 use crate::structure::Structure;
 
 const WATER_NAMES: [&str; 4] = ["HOH", "WAT", "DOD", "H2O"];
@@ -515,10 +516,20 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 /// # Ok::<(), mmcif_model::ReadError>(())
 /// ```
 pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
+    parse_pdb_with(text, &ReadOptions::new()).map(|loaded| loaded.structure)
+}
+
+pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded, ReadError> {
+    let skipping = options.skipping();
     let mut entry_id = None;
     let mut finished: Vec<PdbModel> = Vec::new();
     let mut current: Option<PdbModel> = None;
     for (index, text) in text.lines().enumerate() {
+        if options.reads_first_model_only()
+            && finished.iter().any(|model| !model.residues.is_empty())
+        {
+            break;
+        }
         let line = Line {
             number: index + 1,
             text,
@@ -570,14 +581,15 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
         }
         models.push(Arc::new(into_model(number, chains)));
     }
-    Ok(Structure {
+    let structure = Structure {
         entry_id,
         entities,
         models,
         operators: Vec::new(),
         assemblies: Vec::new(),
         numbering,
-    })
+    };
+    Ok(Loaded::new(structure, skipping.into_errors()))
 }
 
 /// Reads a structure from a PDB file.
@@ -598,6 +610,13 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
 /// # Ok::<(), mmcif_model::ReadError>(())
 /// ```
 pub fn read_pdb(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
+    read_pdb_with(path, &ReadOptions::new()).map(|loaded| loaded.structure)
+}
+
+pub(crate) fn read_pdb_with(
+    path: impl AsRef<Path>,
+    options: &ReadOptions,
+) -> Result<Loaded, ReadError> {
     let bytes = std::fs::read(path).map_err(mmcif_cif::Error::from)?;
     let text = String::from_utf8(bytes).map_err(|error| {
         let valid = &error.as_bytes()[..error.utf8_error().valid_up_to()];
@@ -606,7 +625,7 @@ pub fn read_pdb(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
             problem: "text is not valid UTF-8",
         }
     })?;
-    parse_pdb(&text)
+    parse_pdb_with(&text, options)
 }
 
 #[cfg(test)]
