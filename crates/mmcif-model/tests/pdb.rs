@@ -1,6 +1,6 @@
 use mmcif_model::{
-    AltLoc, AuthResidueKey, AuthSeqId, EntityKind, InsCode, NumberingError, ReadError, parse_pdb,
-    read_pdb,
+    AltLoc, AssemblyId, AuthResidueKey, AuthSeqId, EntityKind, InsCode, NumberingError, ReadError,
+    ReadOptions, Transform, parse_pdb, read_pdb,
 };
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/legacy.pdb");
@@ -265,4 +265,145 @@ fn rejects_malformed_serials_and_charges() {
             ..
         }
     ));
+}
+
+const REMARK_350: &str = "\
+REMARK 350 BIOMOLECULE: 1
+REMARK 350 AUTHOR DETERMINED BIOLOGICAL UNIT: DIMERIC
+REMARK 350 SOFTWARE DETERMINED QUATERNARY STRUCTURE: DIMERIC
+REMARK 350 APPLY THE FOLLOWING TO CHAINS: A,
+REMARK 350                    AND CHAINS: B
+REMARK 350   BIOMT1   1  1.000000  0.000000  0.000000        0.00000
+REMARK 350   BIOMT2   1  0.000000  1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   1  0.000000  0.000000  1.000000        0.00000
+REMARK 350   BIOMT1   2 -1.000000  0.000000  0.000000       10.00000
+REMARK 350   BIOMT2   2  0.000000 -1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   2  0.000000  0.000000  1.000000        0.00000
+REMARK 350
+REMARK 350 BIOMOLECULE: 2
+REMARK 350 SOFTWARE DETERMINED QUATERNARY STRUCTURE: MONOMERIC
+REMARK 350 APPLY THE FOLLOWING TO CHAINS: A
+REMARK 350   BIOMT1   1  1.000000  0.000000  0.000000        0.00000
+REMARK 350   BIOMT2   1  0.000000  1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   1  0.000000  0.000000  1.000000        0.00000
+REMARK 350 APPLY THE FOLLOWING TO CHAINS: B
+REMARK 350   BIOMT1   2  1.000000  0.000000  0.000000       20.00000
+REMARK 350   BIOMT2   2  0.000000  1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   2  0.000000  0.000000  1.000000        0.00000
+";
+
+fn with_remark_350(remarks: &str) -> String {
+    let legacy = std::fs::read_to_string(FIXTURE).unwrap();
+    let (header, rest) = legacy.split_once('\n').unwrap();
+    format!("{header}\n{remarks}{rest}")
+}
+
+#[test]
+fn reads_assemblies_from_remark_350() {
+    let structure = parse_pdb(&with_remark_350(REMARK_350)).unwrap();
+
+    let operators: Vec<(&str, Transform)> = structure
+        .operators()
+        .iter()
+        .map(|operator| (operator.id().as_str(), *operator.transform()))
+        .collect();
+    assert_eq!(operators.len(), 3);
+    assert_eq!(operators[0], ("1", Transform::IDENTITY));
+    assert_eq!(
+        operators[1].1,
+        Transform {
+            rotation: [[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]],
+            translation: [10.0, 0.0, 0.0],
+        }
+    );
+    assert_eq!(operators[2].1.translation, [20.0, 0.0, 0.0]);
+
+    let assemblies = structure.assemblies();
+    let ids: Vec<&str> = assemblies.iter().map(|a| a.id().as_str()).collect();
+    assert_eq!(ids, ["1", "2"]);
+    let details: Vec<Option<&str>> = assemblies.iter().map(|a| a.details()).collect();
+    assert_eq!(
+        details,
+        [
+            Some("author_and_software_defined_assembly"),
+            Some("software_defined_assembly")
+        ]
+    );
+    let oligomers: Vec<Option<&str>> = assemblies.iter().map(|a| a.oligomeric_details()).collect();
+    assert_eq!(oligomers, [Some("dimeric"), Some("monomeric")]);
+    assert!(assemblies.iter().all(|a| a.oligomeric_count().is_none()));
+    let generators = |index: usize| -> Vec<(String, Vec<String>)> {
+        assemblies[index]
+            .generators()
+            .iter()
+            .map(|g| {
+                (
+                    g.expression().to_owned(),
+                    g.asym_ids().iter().map(|a| a.to_string()).collect(),
+                )
+            })
+            .collect()
+    };
+    let strings = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        generators(0),
+        [("1,2".to_owned(), strings(&["A", "C", "D", "E", "B", "F"]))]
+    );
+    assert_eq!(
+        generators(1),
+        [
+            ("1".to_owned(), strings(&["A", "C", "D", "E"])),
+            ("3".to_owned(), strings(&["B", "F"])),
+        ]
+    );
+
+    let model = structure.first_model().unwrap();
+    let dimer = structure.assemble(&AssemblyId::new("1"), model).unwrap();
+    assert_eq!(dimer.atom_count(), 2 * model.atom_count());
+    assert_eq!(
+        structure.assembly_is_deposited(&AssemblyId::new("1"), 1e-6),
+        Ok(false)
+    );
+    assert_eq!(
+        structure.assembly_is_deposited(&AssemblyId::new("2"), 1e-6),
+        Ok(false)
+    );
+}
+
+#[test]
+fn files_without_remark_350_have_no_assemblies() {
+    let structure = read_pdb(FIXTURE).unwrap();
+    assert!(structure.assemblies().is_empty() && structure.operators().is_empty());
+}
+
+#[test]
+fn malformed_remark_350_fails_a_strict_read_and_is_skipped_by_a_lenient_one() {
+    let bad_number = REMARK_350.replace(
+        "BIOMT2   1  0.000000  1.000000",
+        "BIOMT2   1  0.000000  x.000000",
+    );
+    let early = REMARK_350.replace("REMARK 350 APPLY THE FOLLOWING TO CHAINS: A,\n", "");
+    let short = REMARK_350.replace(
+        "REMARK 350   BIOMT3   2  0.000000  0.000000  1.000000        0.00000\n\
+         REMARK 350\n",
+        "REMARK 350\n",
+    );
+    for remarks in [bad_number, early, short] {
+        assert_ne!(remarks, REMARK_350);
+        let text = with_remark_350(&remarks);
+        assert!(
+            matches!(parse_pdb(&text), Err(ReadError::Pdb { .. })),
+            "{remarks}"
+        );
+
+        let path =
+            std::env::temp_dir().join(format!("mmcif-remark-350-{}.pdb", std::process::id()));
+        std::fs::write(&path, &text).unwrap();
+        let loaded = mmcif_model::read_with(&path, &ReadOptions::new().lenient(true)).unwrap();
+        assert!(
+            loaded.structure.assemblies().is_empty() && loaded.structure.operators().is_empty()
+        );
+        assert!(matches!(loaded.skipped.as_slice(), [ReadError::Pdb { .. }]));
+        assert_eq!(loaded.structure.first_model().unwrap().atom_count(), 15);
+    }
 }

@@ -11,24 +11,25 @@ use crate::key::AuthResidueKey;
 use crate::model::{AtomInput, Model, ModelBuilder};
 use crate::numbering::Numbering;
 use crate::read::{Loaded, ReadOptions};
+use crate::remark350;
 use crate::structure::Structure;
 
 const WATER_NAMES: [&str; 4] = ["HOH", "WAT", "DOD", "H2O"];
 
-struct Line<'a> {
+pub(crate) struct Line<'a> {
     number: usize,
     text: &'a str,
 }
 
 impl<'a> Line<'a> {
-    fn error(&self, problem: &'static str) -> ReadError {
+    pub(crate) fn error(&self, problem: &'static str) -> ReadError {
         ReadError::Pdb {
             line: self.number,
             problem,
         }
     }
 
-    fn columns(&self, start: usize, end: usize) -> Result<&'a str, ReadError> {
+    pub(crate) fn columns(&self, start: usize, end: usize) -> Result<&'a str, ReadError> {
         let len = self.text.len();
         self.text
             .get(start.min(len)..end.min(len))
@@ -467,8 +468,9 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 
 /// Parses a structure from PDB text.
 ///
-/// `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER` and `HEADER` records are read,
-/// other records are skipped, and reading stops at `END`. Atoms before the
+/// `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, `HEADER` and `REMARK 350`
+/// records are read, other records are skipped, and reading stops at `END`.
+/// Atoms before the
 /// first `MODEL` record form model 1, and models without atoms are dropped.
 /// The entry id comes from columns 63 to 66 of `HEADER`.
 ///
@@ -486,8 +488,18 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 /// entity, as do non-polymer chains with the same component, and all water
 /// chains share one. Entity ids count up from `1` in chain order, and the
 /// chains of later models take the entity of the first model's chain with
-/// the same label id. Residues have no label residue number, and the
-/// structure has no operators or assemblies.
+/// the same label id. Residues have no label residue number.
+///
+/// Each `BIOMOLECULE` of `REMARK 350` becomes an assembly with that id. Each
+/// `APPLY THE FOLLOWING TO CHAINS` group becomes a generator over every label
+/// chain of the first model whose author chain it lists, applying the group's
+/// `BIOMT` transformations. Equal transformations share one operator, and
+/// operators are numbered from `1` in order of first appearance. The
+/// assembly's details are `author_defined_assembly`,
+/// `software_defined_assembly` or `author_and_software_defined_assembly` by
+/// which units the biomolecule states, its oligomeric details are the
+/// author's unit, else the software's, in lower case, and it has no
+/// oligomeric count.
 ///
 /// A blank element is inferred from the atom name, a blank occupancy reads
 /// as 1 and a blank B-factor as 0. Serial and residue numbers may use the
@@ -498,7 +510,12 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 /// Returns [`ReadError::Pdb`] with the line number if a coordinate,
 /// occupancy, B-factor, serial number, residue number, formal charge or
 /// model number cannot be read, if an element is invalid or cannot be
-/// inferred, or if a record has non-ASCII text in its fixed columns.
+/// inferred, if a record has non-ASCII text in its fixed columns, or if
+/// `REMARK 350` is malformed: a `BIOMT` record that cannot be read, is out
+/// of order or lacks a row, a group with no `BIOMT` records, or a record
+/// before its `BIOMOLECULE` or group. [`read_with`](crate::read_with) with a
+/// lenient [`ReadOptions`](crate::ReadOptions) skips a malformed `REMARK 350`
+/// instead.
 ///
 /// # Examples
 ///
@@ -520,7 +537,8 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
 }
 
 pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded, ReadError> {
-    let skipping = options.skipping();
+    let mut skipping = options.skipping();
+    let mut remarks: Vec<Line<'_>> = Vec::new();
     let mut entry_id = None;
     let mut finished: Vec<PdbModel> = Vec::new();
     let mut current: Option<PdbModel> = None;
@@ -553,6 +571,7 @@ pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded
                 }
             }
             "HEADER" => entry_id = Some(line.field(62, 66)?.to_owned()).filter(|id| !id.is_empty()),
+            "REMARK" if line.field(6, 10)? == "350" => remarks.push(line),
             "END" => break,
             _ => {}
         }
@@ -581,12 +600,16 @@ pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded
         }
         models.push(Arc::new(into_model(number, chains)));
     }
+    let (operators, assemblies) =
+        skipping.or_default(remark350::parse(&remarks).map(|biomolecules| {
+            remark350::build(biomolecules, models.first().map(|model| &**model))
+        }))?;
     let structure = Structure {
         entry_id,
         entities,
         models,
-        operators: Vec::new(),
-        assemblies: Vec::new(),
+        operators,
+        assemblies,
         numbering,
     };
     Ok(Loaded::new(structure, skipping.into_errors()))

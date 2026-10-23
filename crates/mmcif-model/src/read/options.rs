@@ -49,9 +49,10 @@ impl ReadOptions {
     ///
     /// The optional groups are the entities, the numbering schemes
     /// `_pdbx_poly_seq_scheme` and `_pdbx_branch_scheme`, the operators and
-    /// the assemblies. A skipped group is left empty, a skipped numbering
-    /// scheme leaves the numbering that the atoms give, and its error is
-    /// reported in [`Loaded::skipped`]. `_atom_site` is never skipped.
+    /// the assemblies, and in a PDB file the `REMARK 350` assemblies. A
+    /// skipped group is left empty, a skipped numbering scheme leaves the
+    /// numbering that the atoms give, and its error is reported in
+    /// [`Loaded::skipped`]. The atoms are never skipped.
     pub fn lenient(self, lenient: bool) -> ReadOptions {
         ReadOptions { lenient, ..self }
     }
