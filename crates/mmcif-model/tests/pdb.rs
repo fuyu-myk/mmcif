@@ -1,6 +1,6 @@
 use mmcif_model::{
-    AltLoc, AssemblyId, AuthResidueKey, AuthSeqId, EntityKind, InsCode, NumberingError, ReadError,
-    ReadOptions, Transform, parse_pdb, read_pdb,
+    AltLoc, AuthResidueKey, AuthSeqId, EntityKind, InsCode, NumberingError, ReadError, ReadOptions,
+    Transform, parse_pdb, read_pdb,
 };
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/legacy.pdb");
@@ -358,16 +358,10 @@ fn reads_assemblies_from_remark_350() {
     );
 
     let model = structure.first_model().unwrap();
-    let dimer = structure.assemble(&AssemblyId::new("1"), model).unwrap();
+    let dimer = structure.assemble("1", model).unwrap();
     assert_eq!(dimer.atom_count(), 2 * model.atom_count());
-    assert_eq!(
-        structure.assembly_is_deposited(&AssemblyId::new("1"), 1e-6),
-        Ok(false)
-    );
-    assert_eq!(
-        structure.assembly_is_deposited(&AssemblyId::new("2"), 1e-6),
-        Ok(false)
-    );
+    assert_eq!(structure.assembly_is_deposited("1", 1e-6), Ok(false));
+    assert_eq!(structure.assembly_is_deposited("2", 1e-6), Ok(false));
 }
 
 #[test]

@@ -235,10 +235,8 @@ impl Generator {
 /// # Examples
 ///
 /// ```
-/// use mmcif_model::AssemblyId;
-///
 /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
-/// let assembly = structure.assembly(&AssemblyId::new("2")).unwrap();
+/// let assembly = structure.assembly("2").unwrap();
 ///
 /// assert_eq!(assembly.details(), Some("software_defined_assembly"));
 /// assert_eq!(assembly.generators()[0].expression(), "(1,2)");
@@ -373,7 +371,7 @@ impl Structure {
     ///
     /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
     /// let model = structure.first_model().unwrap();
-    /// let dimer = structure.assemble(&AssemblyId::new("2"), model)?;
+    /// let dimer = structure.assemble("2", model)?;
     ///
     /// let copies: Vec<String> = dimer
     ///     .chains()
@@ -382,12 +380,12 @@ impl Structure {
     /// assert_eq!(copies, ["AAx1", "Cx1", "AAx2", "Cx2"]);
     ///
     /// assert_eq!(
-    ///     structure.assemble(&AssemblyId::new("9"), model),
+    ///     structure.assemble("9", model),
     ///     Err(AssemblyError::UnknownAssembly(AssemblyId::new("9")))
     /// );
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn assemble(&self, id: &AssemblyId, model: &Model) -> Result<Model, AssemblyError> {
+    pub fn assemble(&self, id: &str, model: &Model) -> Result<Model, AssemblyError> {
         let (assembly, operators) = self.resolved_assembly(id)?;
         let mut plans = Vec::with_capacity(assembly.generators.len());
         let mut total_atoms: u64 = 0;
@@ -403,7 +401,7 @@ impl Structure {
             plans.push((generator, selected));
         }
         let too_large = || AssemblyError::TooLarge {
-            assembly: id.clone(),
+            assembly: AssemblyId::new(id),
             atoms: total_atoms,
         };
         if total_atoms > MAX_ASSEMBLY_ATOMS {
@@ -442,20 +440,14 @@ impl Structure {
     /// # Examples
     ///
     /// ```
-    /// use mmcif_model::AssemblyId;
-    ///
     /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
     /// // Assembly 1 applies the identity to every chain.
-    /// assert_eq!(structure.assembly_is_deposited(&AssemblyId::new("1"), 1e-3), Ok(true));
+    /// assert_eq!(structure.assembly_is_deposited("1", 1e-3), Ok(true));
     /// // Assembly 2 places chains AA and C twice, by operators 1 and 2.
-    /// assert_eq!(structure.assembly_is_deposited(&AssemblyId::new("2"), 1e-3), Ok(false));
+    /// assert_eq!(structure.assembly_is_deposited("2", 1e-3), Ok(false));
     /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
-    pub fn assembly_is_deposited(
-        &self,
-        id: &AssemblyId,
-        tolerance: f64,
-    ) -> Result<bool, AssemblyError> {
+    pub fn assembly_is_deposited(&self, id: &str, tolerance: f64) -> Result<bool, AssemblyError> {
         let (assembly, operators) = self.resolved_assembly(id)?;
         let mut placed: HashSet<&LabelAsymId> = HashSet::new();
         let mut first: Option<Transform> = None;
@@ -477,11 +469,11 @@ impl Structure {
 
     fn resolved_assembly(
         &self,
-        id: &AssemblyId,
+        id: &str,
     ) -> Result<(&Assembly, HashMap<&str, &Operator>), AssemblyError> {
         let assembly = self
             .assembly(id)
-            .ok_or_else(|| AssemblyError::UnknownAssembly(id.clone()))?;
+            .ok_or_else(|| AssemblyError::UnknownAssembly(AssemblyId::new(id)))?;
         let operators: HashMap<&str, &Operator> = self
             .operators
             .iter()
@@ -494,7 +486,7 @@ impl Structure {
             .find(|operator| !operators.contains_key(operator.as_str()))
         {
             return Err(AssemblyError::UnknownOperator {
-                assembly: id.clone(),
+                assembly: AssemblyId::new(id),
                 operator: missing,
             });
         }

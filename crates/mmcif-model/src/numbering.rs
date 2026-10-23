@@ -130,13 +130,13 @@ impl Numbering {
     /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
     /// let numbering = structure.numbering();
     ///
-    /// let auth = numbering.branch_to_auth(&"B".into(), 2).unwrap();
+    /// let auth = numbering.branch_to_auth("B", 2).unwrap();
     /// assert_eq!(auth.to_string(), "H1:2");
-    /// assert!(numbering.branch_to_auth(&"B".into(), 3).is_none());
+    /// assert!(numbering.branch_to_auth("B", 3).is_none());
     /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
-    pub fn branch_to_auth(&self, asym: &LabelAsymId, num: u32) -> Option<&AuthResidueKey> {
-        self.branch.get(&(asym.clone(), num))
+    pub fn branch_to_auth(&self, asym: &str, num: u32) -> Option<&AuthResidueKey> {
+        self.branch.get(&(LabelAsymId::new(asym), num))
     }
 
     /// Returns the author address of the polymer residue at label position

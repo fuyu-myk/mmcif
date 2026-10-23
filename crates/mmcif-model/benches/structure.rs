@@ -104,7 +104,7 @@ fn expand_assemblies(c: &mut Criterion) {
         group.bench_function(BenchmarkId::from_parameter(id), |b| {
             b.iter(|| {
                 structure
-                    .assemble(black_box(assembly.id()), black_box(model))
+                    .assemble(black_box(assembly.id().as_str()), black_box(model))
                     .expect("assembly expands")
             })
         });

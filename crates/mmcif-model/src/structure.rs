@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::assembly::{Assembly, Operator};
 use crate::entity::Entity;
-use crate::ids::{AssemblyId, ModelNumber};
+use crate::ids::ModelNumber;
 use crate::model::Model;
 use crate::numbering::Numbering;
 
@@ -123,14 +123,12 @@ impl Structure {
     /// # Examples
     ///
     /// ```
-    /// use mmcif_model::AssemblyId;
-    ///
     /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
-    /// let assembly = structure.assembly(&AssemblyId::new("1")).unwrap();
+    /// let assembly = structure.assembly("1").unwrap();
     /// assert_eq!(assembly.details(), Some("author_defined_assembly"));
     /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
-    pub fn assembly(&self, id: &AssemblyId) -> Option<&Assembly> {
+    pub fn assembly(&self, id: &str) -> Option<&Assembly> {
         self.assemblies.iter().find(|assembly| assembly.id() == id)
     }
 

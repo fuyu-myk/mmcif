@@ -144,13 +144,11 @@ impl<'a> ChainRef<'a> {
     /// # Examples
     ///
     /// ```
-    /// use mmcif_model::AssemblyId;
-    ///
     /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
     /// let model = structure.first_model().unwrap();
     /// assert!(model.chain("AA").unwrap().operators().is_empty());
     ///
-    /// let assembled = structure.assemble(&AssemblyId::new("3"), model)?;
+    /// let assembled = structure.assemble("3", model)?;
     /// let chain = assembled.chains().next().unwrap();
     /// let operators: Vec<&str> = chain.operators().iter().map(|id| id.as_str()).collect();
     /// assert_eq!(operators, ["2", "3"]);

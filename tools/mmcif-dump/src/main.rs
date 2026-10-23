@@ -62,7 +62,7 @@ fn dump_assemblies(structure: &Structure) -> Result<Vec<Value>, String> {
         .iter()
         .map(|assembly| {
             let assembled = structure
-                .assemble(assembly.id(), model)
+                .assemble(assembly.id().as_str(), model)
                 .map_err(|error| error.to_string())?;
             let copies: Vec<Value> = assembled
                 .chains()

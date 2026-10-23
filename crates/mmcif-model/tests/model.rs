@@ -245,12 +245,12 @@ fn expands_assemblies() {
     let structure = structure();
     let model = structure.first_model().unwrap();
 
-    let identity = structure.assemble(&AssemblyId::new("1"), model).unwrap();
+    let identity = structure.assemble("1", model).unwrap();
     assert_eq!(identity.atom_count(), model.atom_count());
     let positions = |m: &mmcif_model::Model| m.atoms().map(|a| a.position()).collect::<Vec<_>>();
     assert_eq!(positions(&identity), positions(model));
 
-    let dimer = structure.assemble(&AssemblyId::new("2"), model).unwrap();
+    let dimer = structure.assemble("2", model).unwrap();
     let copies: Vec<String> = dimer
         .chains()
         .map(|c| {
@@ -279,7 +279,7 @@ fn expands_assemblies() {
         .position();
     assert_eq!(rotated_zinc, [-0.0, -0.0, 5.0]);
 
-    let product = structure.assemble(&AssemblyId::new("3"), model).unwrap();
+    let product = structure.assemble("3", model).unwrap();
     assert_eq!(product.chains().len(), 1);
     assert_eq!(
         product
@@ -297,7 +297,7 @@ fn expands_assemblies() {
     );
 
     assert_eq!(
-        structure.assemble(&AssemblyId::new("9"), model),
+        structure.assemble("9", model),
         Err(AssemblyError::UnknownAssembly(AssemblyId::new("9")))
     );
     assert_eq!(structure.assemblies()[1].operator_count(), 2);
@@ -372,7 +372,7 @@ fn reads_oligomeric_details_and_counts() {
 #[test]
 fn tells_whether_an_assembly_shows_the_deposited_arrangement() {
     let structure = structure();
-    let deposited = |id: &str| structure.assembly_is_deposited(&AssemblyId::new(id), 1e-3);
+    let deposited = |id: &str| structure.assembly_is_deposited(id, 1e-3);
     assert_eq!(deposited("1"), Ok(true));
     assert_eq!(deposited("2"), Ok(false));
     assert_eq!(deposited("3"), Ok(true));
@@ -385,11 +385,7 @@ fn tells_whether_an_assembly_shows_the_deposited_arrangement() {
 #[test]
 fn a_deposited_assembly_may_span_several_generators() {
     let text = std::fs::read_to_string(FIXTURE).unwrap();
-    let deposited = |text: &str| {
-        parse_mmcif(text)
-            .unwrap()
-            .assembly_is_deposited(&AssemblyId::new("1"), 1e-3)
-    };
+    let deposited = |text: &str| parse_mmcif(text).unwrap().assembly_is_deposited("1", 1e-3);
     let split = replaced(&text, "1 1 AA,B,C,D\n", "1 1 AA,B\n1 1 C,D\n");
     assert_eq!(deposited(&split), Ok(true));
     let rearranged = replaced(&text, "1 1 AA,B,C,D\n", "1 1 AA,B\n1 2 C,D\n");
@@ -586,7 +582,7 @@ fn assembly_document(rows: usize, expression: &str) -> String {
 fn undefined_operators_are_reported_before_expansion() {
     let structure = parse_mmcif(&assembly_document(10, "(1-1000000)")).unwrap();
     let error = structure
-        .assemble(&AssemblyId::new("1"), structure.first_model().unwrap())
+        .assemble("1", structure.first_model().unwrap())
         .unwrap_err();
     assert!(
         matches!(error, AssemblyError::UnknownOperator { ref operator, .. } if operator.as_str() == "2")
@@ -598,7 +594,7 @@ fn oversized_assemblies_fail_before_allocating() {
     let ones = vec!["1"; 1024].join(",");
     let structure = parse_mmcif(&assembly_document(300, &format!("({ones})({ones})"))).unwrap();
     let error = structure
-        .assemble(&AssemblyId::new("1"), structure.first_model().unwrap())
+        .assemble("1", structure.first_model().unwrap())
         .unwrap_err();
     assert!(matches!(error, AssemblyError::TooLarge { atoms, .. } if atoms == 300 * 1024 * 1024));
 }
@@ -686,7 +682,7 @@ fn structures_with_missing_b_factors_equal_themselves() {
 fn assembled_residues_have_keys_that_find_them() {
     let structure = structure();
     let model = structure.first_model().unwrap();
-    let dimer = structure.assemble(&AssemblyId::new("2"), model).unwrap();
+    let dimer = structure.assemble("2", model).unwrap();
     let residues: Vec<_> = dimer.residues().collect();
     assert_eq!(residues.len(), 12);
     for residue in &residues {
@@ -702,7 +698,7 @@ fn assembled_residues_have_keys_that_find_them() {
     assert_eq!(copy.key().operators.as_ref(), [OperatorId::new("2")]);
     assert_eq!(copy.key().to_string(), "AA/2/100/SER@2");
 
-    let product = structure.assemble(&AssemblyId::new("3"), model).unwrap();
+    let product = structure.assemble("3", model).unwrap();
     let moved = product.residues().next().unwrap();
     assert_eq!(moved.key().to_string(), "AA/2/100/SER@2,3");
     assert_eq!(model.residue(&moved.key()), None);
@@ -762,4 +758,23 @@ fn choosing_no_alternate_location_keeps_only_atoms_without_one() {
     assert_eq!(plain.atom_count(), unlabelled);
     assert!(plain.altlocs().iter().all(|altloc| altloc.is_none()));
     assert!(plain.residues().all(|residue| residue.atoms().len() > 0));
+}
+
+#[test]
+fn lookups_take_plain_strings() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+    assert_eq!(structure.assembly("2").unwrap().id(), "2");
+    assert_eq!(structure.assemble("2", model).unwrap().chains().len(), 4);
+    assert_eq!(structure.assembly_is_deposited("1", 1e-3), Ok(true));
+    assert!(matches!(
+        structure.assemble("9", model),
+        Err(AssemblyError::UnknownAssembly(id)) if id == "9"
+    ));
+    assert_eq!(
+        structure.numbering().branch_to_auth("B", 1).unwrap().seq,
+        AuthSeqId::new(1)
+    );
+    assert_eq!(structure.entity("1").unwrap().id(), "1");
+    assert_eq!(structure.operator("2").unwrap().id(), "2");
 }

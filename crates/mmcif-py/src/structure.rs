@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mmcif_model::{
-    AssemblyId, AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId,
-    ModelNumber, ReadError, Structure,
+    AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId, ModelNumber,
+    ReadError, Structure,
 };
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -324,7 +324,7 @@ impl PyStructure {
             .cloned()
             .ok_or_else(|| PyIndexError::new_err(format!("no model at index {model_index}")))?;
         let structure = Arc::clone(&self.inner);
-        let id = AssemblyId::new(assembly_id);
+        let id = assembly_id.to_owned();
         let assembled = py
             .detach(move || structure.assemble(&id, &model))
             .map_err(assembly_error)?;
@@ -358,7 +358,7 @@ impl PyStructure {
     #[pyo3(signature = (assembly_id, tolerance = 1e-3))]
     fn assembly_is_deposited(&self, assembly_id: &str, tolerance: f64) -> PyResult<bool> {
         self.inner
-            .assembly_is_deposited(&AssemblyId::new(assembly_id), tolerance)
+            .assembly_is_deposited(assembly_id, tolerance)
             .map_err(assembly_error)
     }
 

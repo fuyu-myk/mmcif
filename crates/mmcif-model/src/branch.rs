@@ -151,7 +151,7 @@ impl Structure {
     ) -> Result<Option<LinkedAtom<'a>>, BranchError> {
         let auth = self
             .numbering
-            .branch_to_auth(chain.label_asym(), target.num)
+            .branch_to_auth(chain.label_asym().as_str(), target.num)
             .ok_or_else(|| BranchError::MissingBranchNumbering {
                 asym: chain.label_asym().clone(),
                 num: target.num,

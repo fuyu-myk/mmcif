@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use mmcif_model::{AltlocPolicy, AssemblyId, LabelResidueKey, LabelSeqId, OperatorId, parse_mmcif};
+use mmcif_model::{AltlocPolicy, LabelResidueKey, LabelSeqId, OperatorId, parse_mmcif};
 use proptest::prelude::*;
 
 const HEADER: &str = "loop_\n_atom_site.label_asym_id\n_atom_site.auth_asym_id\n_atom_site.label_comp_id\n\
@@ -101,7 +101,7 @@ proptest! {
     fn identity_assembly_is_a_no_op(generated in residues().prop_map(dedup_positions)) {
         let structure = parse_mmcif(&document(&generated, IDENTITY_ASSEMBLY)).unwrap();
         let model = structure.first_model().unwrap();
-        let assembled = structure.assemble(&AssemblyId::new("1"), model).unwrap();
+        let assembled = structure.assemble("1", model).unwrap();
         prop_assert_eq!(assembled.chains().len(), model.chains().len());
         for (copy, original) in assembled.chains().zip(model.chains()) {
             let addresses = |chain: mmcif_model::ChainRef<'_>| {

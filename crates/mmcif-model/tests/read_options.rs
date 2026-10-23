@@ -1,6 +1,6 @@
 use mmcif_model::{
-    AssemblyError, AssemblyId, AuthResidueKey, AuthSeqId, Format, InsCode, LabelSeqId, ReadError,
-    ReadOptions, Structure, read_with,
+    AssemblyError, AuthResidueKey, AuthSeqId, Format, InsCode, LabelSeqId, ReadError, ReadOptions,
+    Structure, read_with,
 };
 
 const FIXTURE: &str = concat!(
@@ -119,7 +119,7 @@ fn a_lenient_read_skips_malformed_operators_and_assemblies() {
     assert_eq!(loaded.structure.assemblies().len(), 3);
     let model = loaded.structure.first_model().unwrap();
     assert!(matches!(
-        loaded.structure.assemble(&AssemblyId::new("1"), model),
+        loaded.structure.assemble("1", model),
         Err(AssemblyError::UnknownOperator { .. })
     ));
     assert_eq!(loaded.skipped.len(), 1);
