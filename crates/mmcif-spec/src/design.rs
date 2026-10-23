@@ -313,23 +313,7 @@ impl Design {
         &self.skipped
     }
 
-    /// Appends `diagnostics` to the list returned by [`Design::skipped`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::path::Path;
-    ///
-    /// use mmcif_spec::{Diagnostic, check_text};
-    ///
-    /// let yaml = "entities:\n  - protein:\n      id: S\n      sequence: 20\n";
-    /// let checked = check_text("design.yaml", yaml, Path::new("."));
-    /// let mut design = checked.design.unwrap();
-    ///
-    /// design.note_skipped([Diagnostic::warning("unsupported-key", "`msa` is not checked")]);
-    /// assert_eq!(design.skipped().len(), 1);
-    /// ```
-    pub fn note_skipped(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
+    pub(crate) fn note_skipped(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
         self.skipped.extend(diagnostics);
     }
 
@@ -524,3 +508,16 @@ impl Lowered {
         }
     }
 }
+
+/// ```compile_fail,E0624
+/// use std::path::Path;
+///
+/// use mmcif_spec::{Diagnostic, check_text};
+///
+/// let yaml = "entities:\n  - protein:\n      id: S\n      sequence: 20\n";
+/// let mut design = check_text("design.yaml", yaml, Path::new(".")).design.unwrap();
+///
+/// design.note_skipped([Diagnostic::warning("unsupported-key", "`msa` is not checked")]);
+/// ```
+#[cfg(doctest)]
+struct NoteSkippedIsPrivate;
