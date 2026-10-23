@@ -358,6 +358,22 @@ impl PyChain {
             .collect()
     }
 
+    /// The id of the chain's copy, named as in the wwPDB assembly files.
+    ///
+    /// A chain read from a file, or placed by an identity transform, has its
+    /// author chain id. Any other copy has the author chain id followed by a hyphen
+    /// and its operator ids, joined by hyphens, as in ``A-2`` or ``A-X0-1``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("example.cif")
+    /// >>> [chain.instance_id for chain in structure.assemble("2").chains]
+    /// ['H1', 'H1', 'H1-2', 'H1-2']
+    #[getter]
+    fn instance_id(&self) -> String {
+        self.inner.view().instance_id().to_owned()
+    }
+
     /// The residues of the chain, in file order.
     #[getter]
     fn residues(&self) -> Vec<PyResidue> {

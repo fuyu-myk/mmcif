@@ -99,6 +99,14 @@ def test_entities_and_assemblies(structure):
         structure.assemble("1", model_index=5)
 
 
+def test_a_chain_copy_is_named_by_its_operators(structure):
+    deposited = structure.models[0]
+    assert [c.instance_id for c in deposited.chains] == [c.auth_asym for c in deposited.chains]
+    dimer = structure.assemble("2")
+    assert [c.instance_id for c in dimer.chains] == ["H1", "H1", "H1-2", "H1-2"]
+    assert structure.assemble("3").chains[0].instance_id == "H1-2-3"
+
+
 def test_an_assembly_is_found_by_its_id(structure):
     dimer = structure.assembly("2")
     assert (dimer.id, dimer.operator_count) == ("2", 2)
