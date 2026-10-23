@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use mmcif_cif::Document;
 use mmcif_model::{
-    Assembly, AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId, ModelNumber,
-    ReadError, Structure,
+    Assembly, AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId, Loaded,
+    ModelNumber, ReadError, ReadOptions, Structure,
 };
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -29,22 +30,50 @@ use crate::hierarchy::PyModel;
 #[pyclass(name = "Structure", module = "mmcif_io", frozen)]
 pub struct PyStructure {
     inner: Arc<Structure>,
+    skipped: Vec<String>,
+}
+
+impl From<Structure> for PyStructure {
+    fn from(structure: Structure) -> PyStructure {
+        PyStructure {
+            inner: Arc::new(structure),
+            skipped: Vec::new(),
+        }
+    }
+}
+
+impl From<Loaded> for PyStructure {
+    fn from(loaded: Loaded) -> PyStructure {
+        PyStructure {
+            inner: Arc::new(loaded.structure),
+            skipped: loaded.skipped.iter().map(ToString::to_string).collect(),
+        }
+    }
 }
 
 fn wrap(result: Result<Structure, ReadError>) -> PyResult<PyStructure> {
-    result
-        .map(|structure| PyStructure {
-            inner: Arc::new(structure),
-        })
-        .map_err(read_error)
+    result.map(PyStructure::from).map_err(read_error)
 }
 
-fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStructure> {
+fn wrap_at(result: Result<Loaded, ReadError>, path: &Path) -> PyResult<PyStructure> {
     result
-        .map(|structure| PyStructure {
-            inner: Arc::new(structure),
-        })
+        .map(PyStructure::from)
         .map_err(|error| model_error(error, path))
+}
+
+fn options(first_model_only: bool, lenient: bool) -> ReadOptions {
+    ReadOptions::new()
+        .first_model_only(first_model_only)
+        .lenient(lenient)
+}
+
+fn first_block_with(
+    document: Result<Document, mmcif_cif::Error>,
+    options: &ReadOptions,
+) -> Result<Loaded, ReadError> {
+    let document = document?;
+    let block = document.block(0).ok_or(ReadError::NoDataBlock)?;
+    Structure::from_block_with(&block, options)
 }
 
 /// Read the structure in the file at ``path``.
@@ -53,6 +82,12 @@ fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStru
 /// mmCIF, ``.bcif`` as BinaryCIF, and ``.pdb``, ``.ent`` and assembly files such
 /// as ``.pdb1`` as PDB. A gzip-compressed file, such as ``1crn.cif.gz``, is
 /// decompressed. ``path`` is a string or a path-like object.
+///
+/// With ``first_model_only``, only the first model is read. With ``lenient``,
+/// a malformed optional category is skipped instead of raising, and its error is
+/// listed in ``Structure.skipped``. The optional categories are the entities,
+/// the numbering schemes, the operators and the assemblies, and in a PDB file the
+/// ``REMARK 350`` assemblies.
 ///
 /// Raises
 /// ------
@@ -68,12 +103,23 @@ fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStru
 /// <Structure 1CRN with 1 models>
 /// >>> mmcif_io.read("example.pdb").entry_id
 /// '1ABC'
+/// >>> len(mmcif_io.read("example.pdb", first_model_only=True).models)
+/// 1
 #[pyfunction]
-pub fn read(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap_at(py.detach(|| mmcif_model::read(&path)), &path)
+#[pyo3(signature = (path, *, first_model_only = false, lenient = false))]
+pub fn read(
+    py: Python<'_>,
+    path: PathBuf,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    wrap_at(py.detach(|| mmcif_model::read_with(&path, &options)), &path)
 }
 
 /// Read the structure in the mmCIF file at ``path``.
+///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
 ///
 /// Raises
 /// ------
@@ -89,11 +135,21 @@ pub fn read(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
 /// >>> structure.entry_id
 /// '1CRN'
 #[pyfunction]
-pub fn read_mmcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap_at(py.detach(|| mmcif_model::read_mmcif(&path)), &path)
+#[pyo3(signature = (path, *, first_model_only = false, lenient = false))]
+pub fn read_mmcif(
+    py: Python<'_>,
+    path: PathBuf,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    let loaded = py.detach(|| first_block_with(Document::open(&path), &options));
+    wrap_at(loaded, &path)
 }
 
 /// Read the structure in the BinaryCIF file at ``path``.
+///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
 ///
 /// Raises
 /// ------
@@ -109,11 +165,21 @@ pub fn read_mmcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
 /// >>> structure.models[0].atom_count
 /// 327
 #[pyfunction]
-pub fn read_bcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap_at(py.detach(|| mmcif_model::read_bcif(&path)), &path)
+#[pyo3(signature = (path, *, first_model_only = false, lenient = false))]
+pub fn read_bcif(
+    py: Python<'_>,
+    path: PathBuf,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    let loaded = py.detach(|| first_block_with(Document::open_bcif(&path), &options));
+    wrap_at(loaded, &path)
 }
 
 /// Read the structure in the PDB file at ``path``.
+///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
 ///
 /// Raises
 /// ------
@@ -129,8 +195,18 @@ pub fn read_bcif(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
 /// >>> len(structure.models)
 /// 2
 #[pyfunction]
-pub fn read_pdb(py: Python<'_>, path: PathBuf) -> PyResult<PyStructure> {
-    wrap_at(py.detach(|| mmcif_model::read_pdb(&path)), &path)
+#[pyo3(signature = (path, *, first_model_only = false, lenient = false))]
+pub fn read_pdb(
+    py: Python<'_>,
+    path: PathBuf,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    wrap_at(
+        py.detach(|| mmcif_model::read_pdb_with(&path, &options)),
+        &path,
+    )
 }
 
 /// Parse a structure from mmCIF text.
@@ -216,6 +292,19 @@ impl PyStructure {
     #[getter]
     fn entry_id(&self) -> Option<String> {
         self.inner.entry_id().map(str::to_owned)
+    }
+
+    /// The errors of the malformed optional categories that a lenient read
+    /// skipped, as messages, in the order they were read. Empty unless the
+    /// structure was read with ``lenient=True``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> mmcif_io.read("1crn.bcif", lenient=True).skipped
+    /// []
+    #[getter]
+    fn skipped(&self) -> Vec<String> {
+        self.skipped.clone()
     }
 
     /// The models of the structure, in file order.
