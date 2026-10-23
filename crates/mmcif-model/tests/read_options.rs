@@ -266,3 +266,12 @@ fn compressed_files_need_the_gzip_feature() {
         ));
     }
 }
+
+#[test]
+fn parses_pdb_text_with_options() {
+    let text = std::fs::read_to_string(LEGACY).unwrap();
+    let options = ReadOptions::new().first_model_only(true);
+    let loaded = mmcif_model::parse_pdb_with(&text, &options).unwrap();
+    assert_eq!(loaded.structure.models().len(), 1);
+    assert!(loaded.document.is_none() && loaded.skipped.is_empty());
+}

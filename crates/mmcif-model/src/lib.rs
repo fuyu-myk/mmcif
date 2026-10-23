@@ -65,7 +65,7 @@ pub use ids::{
 pub use key::{AuthResidueKey, LabelResidueKey, ResidueKey};
 pub use model::{AtomIndex, ChainIndex, Model, ResidueIndex};
 pub use numbering::{Numbering, NumberingError};
-pub use pdb::{parse_pdb, read_pdb, read_pdb_with};
+pub use pdb::{parse_pdb, parse_pdb_with, read_pdb, read_pdb_with};
 pub use read::{
     Format, Loaded, ReadOptions, parse_bcif, parse_mmcif, read, read_bcif, read_mmcif, read_with,
 };

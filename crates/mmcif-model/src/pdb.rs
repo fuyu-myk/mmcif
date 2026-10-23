@@ -547,7 +547,28 @@ pub fn parse_pdb(text: &str) -> Result<Structure, ReadError> {
     parse_pdb_with(text, &ReadOptions::new()).map(|loaded| loaded.structure)
 }
 
-pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded, ReadError> {
+/// Parses a structure from PDB text with `options`.
+///
+/// The text is read as [`parse_pdb`] reads it, except as `options` change.
+/// [`Loaded::document`] is `None`.
+///
+/// # Errors
+///
+/// Returns the errors of [`parse_pdb`], except that of a `REMARK 350` that a
+/// lenient read skips.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::{ReadOptions, parse_pdb_with};
+///
+/// let text = std::fs::read_to_string("tests/fixtures/legacy.pdb")?;
+/// let loaded = parse_pdb_with(&text, &ReadOptions::new().first_model_only(true))?;
+///
+/// assert_eq!(loaded.structure.models().len(), 1);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded, ReadError> {
     let mut skipping = options.skipping();
     let mut remarks: Vec<Line<'_>> = Vec::new();
     let mut entry_id = None;
