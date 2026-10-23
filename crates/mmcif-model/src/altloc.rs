@@ -121,6 +121,7 @@ fn copy_single_conformer_chain<F>(
         chain.entity().cloned(),
         chain.operators().to_vec(),
     );
+    builder.chain_record(slot).instance_id = chain.record().instance_id.clone();
     let residues: Vec<ResidueRef<'_>> = chain.residues().collect();
     let mut rest = residues.as_slice();
     while let Some(first) = rest.first() {

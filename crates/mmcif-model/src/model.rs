@@ -83,6 +83,7 @@ pub(crate) struct ChainRecord {
     pub auth_asym: AuthAsymId,
     pub entity: Option<EntityId>,
     pub operators: Vec<OperatorId>,
+    pub instance_id: Option<Box<str>>,
     pub residues: Range<u32>,
 }
 
@@ -469,6 +470,7 @@ impl ModelBuilder {
             auth_asym,
             entity,
             operators,
+            instance_id: None,
             residues: 0..0,
         });
         self.chain_residues.push(Vec::new());

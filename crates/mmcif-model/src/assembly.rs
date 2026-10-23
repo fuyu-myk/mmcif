@@ -7,6 +7,7 @@ use crate::structure::Structure;
 use crate::view::ChainRef;
 
 const MAX_ASSEMBLY_ATOMS: u64 = 1 << 28;
+const IDENTITY_TOLERANCE: f64 = 1e-3;
 
 /// A rotation matrix followed by a translation.
 ///
@@ -376,8 +377,17 @@ impl Structure {
         for (generator, selected) in plans {
             for combination in generator.operators.combinations() {
                 let transform = combined_transform(&operators, &combination);
+                let suffix = (!transform.is_identity(IDENTITY_TOLERANCE))
+                    .then(|| instance_suffix(&combination));
                 for chain in &selected {
-                    copy_transformed_chain(&mut builder, model, *chain, &transform, &combination);
+                    copy_transformed_chain(
+                        &mut builder,
+                        model,
+                        *chain,
+                        &transform,
+                        &combination,
+                        suffix.as_deref(),
+                    );
                 }
             }
         }
@@ -468,12 +478,21 @@ fn combined_transform(
         })
 }
 
+fn instance_suffix(combination: &[OperatorId]) -> String {
+    combination
+        .iter()
+        .map(OperatorId::as_str)
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 fn copy_transformed_chain(
     builder: &mut ModelBuilder,
     model: &Model,
     chain: ChainRef<'_>,
     transform: &Transform,
     combination: &[OperatorId],
+    suffix: Option<&str>,
 ) {
     let slot = builder.new_chain(
         chain.label_asym().clone(),
@@ -481,6 +500,8 @@ fn copy_transformed_chain(
         chain.entity().cloned(),
         combination.to_vec(),
     );
+    builder.chain_record(slot).instance_id =
+        suffix.map(|suffix| format!("{}-{suffix}", chain.auth_asym()).into());
     for residue in chain.residues() {
         let residue_slot = builder.new_residue(
             slot,

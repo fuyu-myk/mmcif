@@ -107,7 +107,7 @@ model_ref!(
 );
 
 impl<'a> ChainRef<'a> {
-    fn record(&self) -> &'a ChainRecord {
+    pub(crate) fn record(&self) -> &'a ChainRecord {
         &self.model.chains[self.index as usize]
     }
 
@@ -156,6 +156,43 @@ impl<'a> ChainRef<'a> {
     /// ```
     pub fn operators(&self) -> &'a [OperatorId] {
         &self.record().operators
+    }
+
+    /// Returns the id of the chain's copy, named as in the wwPDB assembly
+    /// files.
+    ///
+    /// A chain as read from the file, or placed by
+    /// [`Structure::assemble`] with a transform that is the identity to within
+    /// 1e-3 in each element, has its author chain id. Any other copy has the
+    /// author chain id followed by a hyphen and the ids of its operators,
+    /// joined by hyphens, as in `A-2` or `A-X0-1`. Chains with the same author
+    /// chain id and operators have the same instance id, as a ligand does with
+    /// its polymer chain.
+    ///
+    /// [`Structure::assemble`]: crate::Structure::assemble
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    /// assert_eq!(model.chain("AA").unwrap().instance_id(), "H1");
+    ///
+    /// // Assembly 2 places chains AA and C by operators 1, the identity, and 2.
+    /// let dimer = structure.assemble("2", model)?;
+    /// let ids: Vec<&str> = dimer.chains().map(|chain| chain.instance_id()).collect();
+    /// assert_eq!(ids, ["H1", "H1", "H1-2", "H1-2"]);
+    ///
+    /// let product = structure.assemble("3", model)?;
+    /// assert_eq!(product.chains().next().unwrap().instance_id(), "H1-2-3");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn instance_id(&self) -> &'a str {
+        let record = self.record();
+        record
+            .instance_id
+            .as_deref()
+            .unwrap_or(record.auth_asym.as_str())
     }
 
     /// Returns the number of residues in the chain.
