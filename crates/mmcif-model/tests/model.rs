@@ -208,7 +208,7 @@ fn reads_atom_properties() {
     assert_eq!(zinc.element().symbol(), "Zn");
     assert_eq!(zinc.charge(), Some(2));
     assert_eq!(zinc.serial(), Some(14));
-    assert_eq!(zinc.b_factor(), 30.0);
+    assert_eq!(zinc.b_factor(), Some(30.0));
     assert!(
         model
             .chain("C")
@@ -628,4 +628,56 @@ fn derived_models_equal_fresh_parses_of_the_same_atoms() {
     assert_eq!(selected_threonine, fresh_threonine);
     let identity = selected.single_conformer(AltlocPolicy::First);
     assert_eq!(identity, selected);
+}
+
+fn with_b_factors(values: [&str; 2]) -> String {
+    format!(
+        "data_x\nloop_\n_atom_site.label_asym_id\n_atom_site.label_comp_id\n_atom_site.label_atom_id\n\
+         _atom_site.type_symbol\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n\
+         _atom_site.Cartn_z\n_atom_site.B_iso_or_equiv\nA GLY N N 1 0 0 0 {}\nA GLY CA C 1 1.5 0 0 {}\n",
+        values[0], values[1]
+    )
+}
+
+#[test]
+fn a_missing_b_factor_is_none_and_nan() {
+    for missing in [".", "?"] {
+        let structure = parse_mmcif(&with_b_factors([missing, "12.5"])).unwrap();
+        let model = structure.first_model().unwrap();
+        let b_factors: Vec<Option<f64>> = model.atoms().map(|atom| atom.b_factor()).collect();
+        assert_eq!(b_factors, [None, Some(12.5)]);
+        assert!(model.b_factors()[0].is_nan());
+        assert_eq!(model.b_factors()[1], 12.5);
+    }
+}
+
+#[test]
+fn a_b_factor_that_is_not_finite_is_invalid() {
+    for value in ["nan", "inf", "-inf"] {
+        let error = parse_mmcif(&with_b_factors(["1.0", value])).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                ReadError::InvalidValue {
+                    category: "atom_site",
+                    item: "B_iso_or_equiv",
+                    row: 1,
+                    ..
+                }
+            ),
+            "{value}: {error}"
+        );
+    }
+}
+
+#[test]
+fn structures_with_missing_b_factors_equal_themselves() {
+    let text = with_b_factors([".", "?"]);
+    let structure = parse_mmcif(&text).unwrap();
+    assert_eq!(structure, structure.clone());
+    assert_eq!(structure, parse_mmcif(&text).unwrap());
+    assert_ne!(
+        structure,
+        parse_mmcif(&with_b_factors([".", "1.0"])).unwrap()
+    );
 }

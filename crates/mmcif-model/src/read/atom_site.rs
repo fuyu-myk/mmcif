@@ -128,7 +128,17 @@ impl<'a> AtomSiteFields<'a> {
                 .map_or(AltLoc::NONE, AltLoc::new),
             position,
             occupancy: self.occupancy.parse(row)?.unwrap_or(1.0),
-            b_factor: self.b_factor.parse(row)?.unwrap_or(0.0),
+            b_factor: match self.b_factor.parse::<f64>(row)? {
+                Some(value) if !value.is_finite() => {
+                    return Err(self.b_factor.invalid(
+                        row,
+                        &value.to_string(),
+                        "not a finite number",
+                    ));
+                }
+                Some(value) => value,
+                None => f64::NAN,
+            },
             charge: self.charge.parse(row)?,
         })
     }

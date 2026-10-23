@@ -97,7 +97,7 @@ pub(crate) struct ResidueRecord {
     pub atoms: Range<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct AtomColumns {
     pub names: Vec<u32>,
     pub name_table: Vec<AtomName>,
@@ -109,6 +109,27 @@ pub(crate) struct AtomColumns {
     pub b_factors: Vec<f64>,
     pub charges: Vec<Option<i8>>,
     pub residues: Vec<u32>,
+}
+
+impl PartialEq for AtomColumns {
+    fn eq(&self, other: &AtomColumns) -> bool {
+        let same_b_factors = self.b_factors.len() == other.b_factors.len()
+            && self
+                .b_factors
+                .iter()
+                .zip(&other.b_factors)
+                .all(|(a, b)| a == b || (a.is_nan() && b.is_nan()));
+        self.names == other.names
+            && self.name_table == other.name_table
+            && self.elements == other.elements
+            && self.altlocs == other.altlocs
+            && self.serials == other.serials
+            && self.positions == other.positions
+            && self.occupancies == other.occupancies
+            && same_b_factors
+            && self.charges == other.charges
+            && self.residues == other.residues
+    }
 }
 
 /// One model of a structure, holding its chains, residues and atoms.
@@ -320,7 +341,7 @@ impl Model {
 
     /// Returns the isotropic B-factor of every atom, by atom index.
     ///
-    /// An atom whose file gives no B-factor has 0.0.
+    /// An atom whose file gives no B-factor has NaN.
     pub fn b_factors(&self) -> &[f64] {
         &self.atoms.b_factors
     }

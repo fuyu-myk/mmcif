@@ -407,3 +407,40 @@ fn malformed_remark_350_fails_a_strict_read_and_is_skipped_by_a_lenient_one() {
         assert_eq!(loaded.structure.first_model().unwrap().atom_count(), 15);
     }
 }
+
+#[test]
+fn a_blank_b_factor_is_none_and_a_non_finite_one_is_invalid() {
+    let blank = atom_line("ATOM", 1, "N", "GLY", 'A', 1);
+    let mut columns: Vec<char> = blank.chars().collect();
+    columns.resize(80, ' ');
+    let with_b = |text: &str| -> String {
+        let mut line = columns.clone();
+        for (offset, character) in format!("{text:>6}").chars().enumerate() {
+            line[60 + offset] = character;
+        }
+        line.into_iter().collect::<String>() + "\n"
+    };
+    let structure = parse_pdb(&with_b("")).unwrap();
+    let atom = structure.first_model().unwrap().atoms().next().unwrap();
+    assert_eq!(atom.b_factor(), None);
+    assert_eq!(
+        parse_pdb(&with_b("12.50"))
+            .unwrap()
+            .first_model()
+            .unwrap()
+            .atoms()
+            .next()
+            .unwrap()
+            .b_factor(),
+        Some(12.5)
+    );
+    for value in ["nan", "inf"] {
+        assert!(
+            matches!(
+                parse_pdb(&with_b(value)),
+                Err(ReadError::Pdb { line: 1, .. })
+            ),
+            "{value}"
+        );
+    }
+}

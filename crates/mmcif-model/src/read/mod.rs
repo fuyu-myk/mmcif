@@ -54,7 +54,8 @@ impl Structure {
     /// appearance. `label_atom_id` and `label_comp_id` fall back to
     /// `auth_atom_id` and `auth_comp_id`. When the `auth_asym_id` or
     /// `auth_seq_id` column is absent, the label value is used in its place.
-    /// A missing occupancy reads as 1 and a missing B-factor as 0.
+    /// A missing occupancy reads as 1, and a missing B-factor as NaN, which
+    /// [`AtomRef::b_factor`](crate::AtomRef::b_factor) gives as `None`.
     ///
     /// When present, `_entry`, `_entity`, `_entity_poly`, `_entity_poly_seq`,
     /// `_struct_asym`, `_pdbx_entity_branch`, `_pdbx_entity_branch_list`,

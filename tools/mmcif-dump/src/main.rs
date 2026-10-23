@@ -31,7 +31,7 @@ fn dump_model(model: &Model) -> Value {
                 round3(y),
                 round3(z),
                 round3(atom.occupancy()),
-                round3(atom.b_factor()),
+                atom.b_factor().map(round3),
             ])
         })
         .collect();

@@ -202,7 +202,7 @@ impl PyModel {
 
     /// The isotropic B-factor of each atom, a float64 NumPy array.
     ///
-    /// An atom whose file gives no B-factor has 0.0.
+    /// An atom whose file gives no B-factor has NaN.
     #[getter]
     fn b_factors<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         PyArray1::from_slice(py, self.inner.b_factors())
@@ -683,10 +683,10 @@ impl PyAtom {
         self.inner.view().occupancy()
     }
 
-    /// The isotropic B-factor, from ``_atom_site.B_iso_or_equiv``, or 0.0 if the
-    /// file gives none.
+    /// The isotropic B-factor, from ``_atom_site.B_iso_or_equiv``, or ``None`` if
+    /// the file gives none.
     #[getter]
-    fn b_factor(&self) -> f64 {
+    fn b_factor(&self) -> Option<f64> {
         self.inner.view().b_factor()
     }
 

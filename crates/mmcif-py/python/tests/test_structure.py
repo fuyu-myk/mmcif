@@ -188,3 +188,14 @@ def test_reads_gzip_compressed_files(tmp_path, crambin_bcif_path, legacy_pdb_pat
         compressed, plain = m.read(target), m.read(source)
         assert compressed.models[0].atom_count == plain.models[0].atom_count
         np.testing.assert_array_equal(compressed.models[0].coordinates, plain.models[0].coordinates)
+
+
+def test_a_missing_b_factor_is_none_and_nan():
+    text = (
+        "data_x\nloop_\n_atom_site.label_asym_id\n_atom_site.label_comp_id\n_atom_site.label_atom_id\n"
+        "_atom_site.type_symbol\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n"
+        "_atom_site.Cartn_z\n_atom_site.B_iso_or_equiv\nA GLY N N 1 0 0 0 .\nA GLY CA C 1 1.5 0 0 12.5\n"
+    )
+    model = m.parse_mmcif(text).models[0]
+    assert [atom.b_factor for atom in model.atoms()] == [None, 12.5]
+    assert np.isnan(model.b_factors[0]) and model.b_factors[1] == 12.5

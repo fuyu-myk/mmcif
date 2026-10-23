@@ -73,6 +73,17 @@ impl<'a> Line<'a> {
         decode(raw).map(Some).ok_or_else(|| self.error(problem))
     }
 
+    fn b_factor(&self) -> Result<f64, ReadError> {
+        match self.field(60, 66)? {
+            "" => Ok(f64::NAN),
+            text => text
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| self.error("invalid temperature factor")),
+        }
+    }
+
     fn number_or<T: std::str::FromStr>(
         &self,
         start: usize,
@@ -230,7 +241,7 @@ impl PdbModel {
                 line.number(46, 54, "invalid z coordinate")?,
             ],
             occupancy: line.number_or(54, 60, 1.0, "invalid occupancy")?,
-            b_factor: line.number_or(60, 66, 0.0, "invalid temperature factor")?,
+            b_factor: line.b_factor()?,
             charge: line.optional(78, 80, "invalid formal charge", parse_charge)?,
         };
         let segment = self.segment(&chain);
@@ -502,7 +513,7 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 /// oligomeric count.
 ///
 /// A blank element is inferred from the atom name, a blank occupancy reads
-/// as 1 and a blank B-factor as 0. Serial and residue numbers may use the
+/// as 1 and a blank B-factor as NaN. Serial and residue numbers may use the
 /// hybrid-36 encoding.
 ///
 /// # Errors

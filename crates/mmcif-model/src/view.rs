@@ -507,9 +507,10 @@ impl<'a> AtomRef<'a> {
         self.model.atoms.occupancies[self.at()]
     }
 
-    /// Returns the isotropic B-factor, or 0.0 if the file gives none.
-    pub fn b_factor(&self) -> f64 {
-        self.model.atoms.b_factors[self.at()]
+    /// Returns the isotropic B-factor, or `None` if the file gives none.
+    pub fn b_factor(&self) -> Option<f64> {
+        let b_factor = self.model.atoms.b_factors[self.at()];
+        (!b_factor.is_nan()).then_some(b_factor)
     }
 
     /// Returns the formal charge, or `None` if the file gives none.

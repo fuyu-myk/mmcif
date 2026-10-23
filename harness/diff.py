@@ -53,8 +53,13 @@ def compare_atom_pair(differences: Differences, prefix: str, key: tuple, ours: l
     if deviation > tolerance + FLOAT_SLACK:
         record(differences, "coordinate", f"{label}: {ours[X:Z + 1]} vs {theirs[X:Z + 1]}")
     for column, category in ((OCC, "occupancy"), (BISO, "b_iso")):
-        if abs(ours[column] - theirs[column]) > tolerance + FLOAT_SLACK:
-            record(differences, category, f"{label}: {ours[column]} vs {theirs[column]}")
+        mine, other = ours[column], theirs[column]
+        if mine is None or other is None:
+            differs = mine is not other
+        else:
+            differs = abs(mine - other) > tolerance + FLOAT_SLACK
+        if differs:
+            record(differences, category, f"{label}: {mine} vs {other}")
 
 
 def compare_atoms(differences: Differences, number: int, ours: list[list[Any]], theirs: list[list[Any]], tolerance: float) -> None:
