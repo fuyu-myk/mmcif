@@ -22,20 +22,14 @@ use crate::slot::Slot;
 /// # Ok::<(), mmcif_ir::IrError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Length {
-    /// Exactly this many slots.
-    Exact(u32),
-    /// Any number of slots from `min` to `max` inclusive.
-    Range {
-        /// The smallest number of slots.
-        min: u32,
-        /// The largest number of slots.
-        max: u32,
-    },
+pub struct Length {
+    min: u32,
+    max: u32,
 }
 
 impl Length {
+    const ONE: Length = Length { min: 1, max: 1 };
+
     /// Creates a length of exactly `count` slots.
     ///
     /// # Errors
@@ -47,21 +41,18 @@ impl Length {
     /// ```
     /// use mmcif_ir::{IrError, Length};
     ///
-    /// assert_eq!(Length::exact(4)?, Length::Exact(4));
+    /// let length = Length::exact(4)?;
+    /// assert_eq!((length.min(), length.max()), (4, 4));
     /// assert_eq!(Length::exact(0), Err(IrError::EmptyRun));
     /// # Ok::<(), IrError>(())
     /// ```
     pub fn exact(count: u32) -> Result<Length, IrError> {
-        if count == 0 {
-            return Err(IrError::EmptyRun);
-        }
-        Ok(Length::Exact(count))
+        Length::range(count, count)
     }
 
     /// Creates a length of `min` to `max` slots inclusive.
     ///
-    /// Returns [`Length::Exact`] when `min` equals `max`. The minimum may be
-    /// zero.
+    /// The minimum may be zero.
     ///
     /// # Errors
     ///
@@ -73,8 +64,9 @@ impl Length {
     /// ```
     /// use mmcif_ir::{IrError, Length};
     ///
-    /// assert_eq!(Length::range(0, 4)?, Length::Range { min: 0, max: 4 });
-    /// assert_eq!(Length::range(4, 4)?, Length::Exact(4));
+    /// let length = Length::range(0, 4)?;
+    /// assert_eq!((length.min(), length.max()), (0, 4));
+    /// assert_eq!(Length::range(4, 4)?, Length::exact(4)?);
     /// assert_eq!(
     ///     Length::range(5, 2),
     ///     Err(IrError::DescendingRange { min: 5, max: 2 })
@@ -89,26 +81,17 @@ impl Length {
         if max == 0 {
             return Err(IrError::EmptyRun);
         }
-        if min == max {
-            return Ok(Length::Exact(min));
-        }
-        Ok(Length::Range { min, max })
+        Ok(Length { min, max })
     }
 
     /// Returns the smallest number of slots the length allows.
     pub fn min(self) -> u32 {
-        match self {
-            Length::Exact(count) => count,
-            Length::Range { min, .. } => min,
-        }
+        self.min
     }
 
     /// Returns the largest number of slots the length allows.
     pub fn max(self) -> u32 {
-        match self {
-            Length::Exact(count) => count,
-            Length::Range { max, .. } => max,
-        }
+        self.max
     }
 
     /// Returns `true` if `count` lies between the minimum and the maximum,
@@ -156,7 +139,7 @@ impl Length {
 ///
 /// assert_eq!(run.slot(), &Slot::de_novo());
 /// assert_eq!(run.length(), Length::range(3, 5)?);
-/// assert_eq!(Element::Slot(Slot::de_novo()).length(), Length::Exact(1));
+/// assert_eq!(Element::Slot(Slot::de_novo()).length(), Length::exact(1)?);
 /// # Ok::<(), mmcif_ir::IrError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,7 +147,8 @@ impl Length {
 pub enum Element {
     /// A single slot.
     Slot(Slot),
-    /// Copies of one slot.
+    /// Copies of one slot, made by [`Element::run`].
+    #[non_exhaustive]
     Run {
         /// The slot each copy repeats.
         slot: Slot,
@@ -176,7 +160,7 @@ pub enum Element {
 impl Element {
     /// Creates an element that repeats `slot` `length` times.
     ///
-    /// Returns [`Element::Slot`] when `length` is `Length::Exact(1)`, and
+    /// Returns [`Element::Slot`] when `length` is exactly one, and
     /// [`Element::Run`] otherwise.
     ///
     /// # Examples
@@ -192,9 +176,10 @@ impl Element {
     /// # Ok::<(), mmcif_ir::IrError>(())
     /// ```
     pub fn run(slot: Slot, length: Length) -> Element {
-        match length {
-            Length::Exact(1) => Element::Slot(slot),
-            _ => Element::Run { slot, length },
+        if length == Length::ONE {
+            Element::Slot(slot)
+        } else {
+            Element::Run { slot, length }
         }
     }
 
@@ -206,11 +191,11 @@ impl Element {
         }
     }
 
-    /// Returns the length of the element, which is `Length::Exact(1)` for
+    /// Returns the length of the element, which is exactly one for
     /// [`Element::Slot`].
     pub fn length(&self) -> Length {
         match self {
-            Element::Slot(_) => Length::Exact(1),
+            Element::Slot(_) => Length::ONE,
             Element::Run { length, .. } => *length,
         }
     }
@@ -372,6 +357,29 @@ impl Segment {
     }
 }
 
+/// ```compile_fail
+/// use mmcif_ir::Length;
+///
+/// let empty = Length::Exact(0);
+/// ```
+///
+/// ```compile_fail
+/// use mmcif_ir::Length;
+///
+/// let descending = Length::Range { min: 5, max: 2 };
+/// ```
+///
+/// ```compile_fail,E0639
+/// use mmcif_ir::{Element, Length, Slot};
+///
+/// let single = Element::Run {
+///     slot: Slot::de_novo(),
+///     length: Length::exact(1).unwrap(),
+/// };
+/// ```
+#[cfg(doctest)]
+struct LengthsAndRunsAreValidated;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,7 +395,7 @@ mod tests {
 
     #[test]
     fn degenerate_ranges_collapse_to_exact_lengths() {
-        assert_eq!(Length::range(4, 4).unwrap(), Length::Exact(4));
+        assert_eq!(Length::range(4, 4).unwrap(), Length::exact(4).unwrap());
         assert!(!Length::range(4, 4).unwrap().is_symbolic());
         assert!(Length::range(2, 5).unwrap().is_symbolic());
         assert_eq!(
@@ -402,10 +410,13 @@ mod tests {
     #[test]
     fn a_run_of_one_is_a_single_slot() {
         assert_eq!(
-            Element::run(Slot::de_novo(), Length::Exact(1)),
+            Element::run(Slot::de_novo(), Length::exact(1).unwrap()),
             Element::Slot(Slot::de_novo())
         );
-        assert_eq!(Element::Slot(Slot::de_novo()).length(), Length::Exact(1));
+        assert_eq!(
+            Element::Slot(Slot::de_novo()).length(),
+            Length::exact(1).unwrap()
+        );
     }
 
     #[test]

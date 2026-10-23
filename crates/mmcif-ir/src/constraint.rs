@@ -8,7 +8,8 @@ use crate::ids::{ElementIndex, GroupId, SegmentId, SlotIndex};
 /// The way a [`Constraint`] names its slots.
 ///
 /// [`Symbolic`] names slots by their place in a [`Spec`](crate::Spec), and
-/// [`Resolved`] names them by [`SlotIndex`] after instantiation.
+/// [`Resolved`] names them by [`SlotIndex`] after instantiation. These are the
+/// only two ways.
 ///
 /// # Examples
 ///
@@ -31,7 +32,7 @@ use crate::ids::{ElementIndex, GroupId, SegmentId, SlotIndex};
 ///
 /// assert_eq!(describe(&helix), "secondary structure");
 /// ```
-pub trait Addressing {
+pub trait Addressing: sealed::Sealed {
     /// The type that names one slot.
     type One: Clone + fmt::Debug + PartialEq;
     /// The type that names a set of slots.
@@ -81,6 +82,13 @@ impl Addressing for Symbolic {
 impl Addressing for Resolved {
     type One = SlotIndex;
     type Many = Vec<SlotIndex>;
+}
+
+mod sealed {
+    pub trait Sealed {}
+
+    impl Sealed for super::Symbolic {}
+    impl Sealed for super::Resolved {}
 }
 
 /// A place in a [`Spec`](crate::Spec): a whole element, or the slot at an
@@ -450,6 +458,19 @@ impl Constraint<Resolved> {
         }
     }
 }
+
+/// ```compile_fail,E0277
+/// use mmcif_ir::{Addressing, SlotIndex};
+///
+/// struct ByPosition;
+///
+/// impl Addressing for ByPosition {
+///     type One = SlotIndex;
+///     type Many = Vec<SlotIndex>;
+/// }
+/// ```
+#[cfg(doctest)]
+struct AddressingIsSealed;
 
 #[cfg(test)]
 mod tests {

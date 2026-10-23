@@ -1,4 +1,4 @@
-use mmcif_ir::{Element, Identity, Length};
+use mmcif_ir::{Element, Identity};
 use mmcif_spec::{Design, Diagnostic, SegmentKind, SegmentSource, SourceId, Span};
 
 use crate::capability::{self, Capabilities};
@@ -202,11 +202,14 @@ fn designed(
 
 fn piece(element: &Element) -> Option<String> {
     match element.slot().identity {
-        Identity::Any => match element.length() {
-            Length::Exact(count) => Some(count.to_string()),
-            Length::Range { min, max } => Some(format!("{min}-{max}")),
-            _ => None,
-        },
+        Identity::Any => {
+            let length = element.length();
+            Some(if length.is_symbolic() {
+                format!("{}-{}", length.min(), length.max())
+            } else {
+                length.min().to_string()
+            })
+        }
         _ => None,
     }
 }

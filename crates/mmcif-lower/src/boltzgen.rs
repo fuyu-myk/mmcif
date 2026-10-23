@@ -1,5 +1,5 @@
 use mmcif_ir::{
-    Constraint, Element, Identity, Length, Scope, SecondaryStructure, SegmentId, Slot, Symbolic,
+    Constraint, Element, Identity, Scope, SecondaryStructure, SegmentId, Slot, Symbolic,
     SymbolicAddress,
 };
 use mmcif_spec::{Design, Diagnostic, SegmentKind, SegmentSource, SourceId, Span, one_letter};
@@ -229,20 +229,21 @@ fn protein(
 fn piece(element: &Element) -> Result<String, String> {
     let length = element.length();
     match &element.slot().identity {
-        Identity::Any => Ok(match length {
-            Length::Exact(count) => count.to_string(),
-            Length::Range { min, max } => format!("{min}..{max}"),
-            _ => return Err("this run has no length".to_string()),
+        Identity::Any => Ok(if length.is_symbolic() {
+            format!("{}..{}", length.min(), length.max())
+        } else {
+            length.min().to_string()
         }),
         Identity::Exactly(comp) => {
             let Some(letter) = one_letter(comp) else {
                 return Err(format!("{comp} has no one letter code"));
             };
-            match length {
-                Length::Exact(count) => Ok(letter.to_string().repeat(count as usize)),
-                _ => Err(format!(
+            if length.is_symbolic() {
+                Err(format!(
                     "a run of {comp} cannot have a variable length in a sequence"
-                )),
+                ))
+            } else {
+                Ok(letter.to_string().repeat(length.min() as usize))
             }
         }
         Identity::OneOf(_) => {
