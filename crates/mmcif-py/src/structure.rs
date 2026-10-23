@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mmcif_model::{
-    AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId, ModelNumber,
+    Assembly, AuthResidueKey, AuthSeqId, Entity, InsCode, LabelResidueKey, LabelSeqId, ModelNumber,
     ReadError, Structure,
 };
 use pyo3::exceptions::PyIndexError;
@@ -272,28 +272,21 @@ impl PyStructure {
         self.inner
             .assemblies()
             .iter()
-            .map(|assembly| PyAssembly {
-                id: assembly.id().to_string(),
-                details: assembly.details().map(str::to_owned),
-                oligomeric_details: assembly.oligomeric_details().map(str::to_owned),
-                oligomeric_count: assembly.oligomeric_count(),
-                operator_count: assembly.operator_count(),
-                generators: assembly
-                    .generators()
-                    .iter()
-                    .map(|generator| {
-                        (
-                            generator.expression().to_owned(),
-                            generator
-                                .asym_ids()
-                                .iter()
-                                .map(|asym| asym.to_string())
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            })
+            .map(PyAssembly::from)
             .collect()
+    }
+
+    /// Return the assembly with id ``id``, or ``None``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> structure = mmcif_io.read("1crn.bcif")
+    /// >>> structure.assembly("1").details
+    /// 'author_defined_assembly'
+    /// >>> structure.assembly("9") is None
+    /// True
+    fn assembly(&self, id: &str) -> Option<PyAssembly> {
+        self.inner.assembly(id).map(PyAssembly::from)
     }
 
     /// Return a new model holding the assembly ``assembly_id``, built from the model
@@ -537,6 +530,32 @@ pub struct PyAssembly {
     /// The ``(operator expression, label asym ids)`` pairs from
     /// ``_pdbx_struct_assembly_gen``, in file order.
     generators: Vec<(String, Vec<String>)>,
+}
+
+impl From<&Assembly> for PyAssembly {
+    fn from(assembly: &Assembly) -> PyAssembly {
+        PyAssembly {
+            id: assembly.id().to_string(),
+            details: assembly.details().map(str::to_owned),
+            oligomeric_details: assembly.oligomeric_details().map(str::to_owned),
+            oligomeric_count: assembly.oligomeric_count(),
+            operator_count: assembly.operator_count(),
+            generators: assembly
+                .generators()
+                .iter()
+                .map(|generator| {
+                    (
+                        generator.expression().to_owned(),
+                        generator
+                            .asym_ids()
+                            .iter()
+                            .map(|asym| asym.to_string())
+                            .collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
 }
 
 #[pymethods]

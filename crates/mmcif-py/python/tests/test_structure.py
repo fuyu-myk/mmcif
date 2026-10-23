@@ -99,6 +99,14 @@ def test_entities_and_assemblies(structure):
         structure.assemble("1", model_index=5)
 
 
+def test_an_assembly_is_found_by_its_id(structure):
+    dimer = structure.assembly("2")
+    assert (dimer.id, dimer.operator_count) == ("2", 2)
+    assert dimer.generators == [("(1,2)", ["AA", "C"])]
+    assert [structure.assembly(a.id).id for a in structure.assemblies] == ["1", "2", "3"]
+    assert structure.assembly("9") is None
+
+
 def test_assembly_oligomeric_state_and_deposited_check(structure, crambin_bcif_path):
     crambin = m.read(crambin_bcif_path).assemblies[0]
     assert (crambin.oligomeric_details, crambin.oligomeric_count) == ("monomeric", 1)
