@@ -717,3 +717,49 @@ fn deposited_residue_keys_name_no_operators() {
     assert_eq!(alanine.key().to_string(), "AA/3/100A/ALA");
     assert_eq!(model.residue(&alanine.key()), Some(alanine));
 }
+
+#[test]
+fn a_chooser_picks_the_alternate_location_at_each_position() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+
+    let mut positions = Vec::new();
+    let first = model.single_conformer_by(|position| {
+        positions.push(position.len());
+        position
+            .iter()
+            .flat_map(|residue| residue.atoms())
+            .map(|atom| atom.altloc())
+            .find(|altloc| !altloc.is_none())
+    });
+    assert!(!positions.is_empty());
+    assert_eq!(first, model.single_conformer(AltlocPolicy::First));
+
+    let lowest = model.single_conformer_by(|position| {
+        position
+            .iter()
+            .flat_map(|residue| residue.atoms())
+            .filter(|atom| !atom.altloc().is_none())
+            .min_by(|a, b| a.occupancy().total_cmp(&b.occupancy()))
+            .map(|atom| atom.altloc())
+    });
+    assert_ne!(
+        lowest,
+        model.single_conformer(AltlocPolicy::HighestOccupancy)
+    );
+}
+
+#[test]
+fn choosing_no_alternate_location_keeps_only_atoms_without_one() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+    let plain = model.single_conformer_by(|_| None);
+    let unlabelled = model
+        .altlocs()
+        .iter()
+        .filter(|altloc| altloc.is_none())
+        .count();
+    assert_eq!(plain.atom_count(), unlabelled);
+    assert!(plain.altlocs().iter().all(|altloc| altloc.is_none()));
+    assert!(plain.residues().all(|residue| residue.atoms().len() > 0));
+}

@@ -19,6 +19,7 @@ use crate::view::{ChainRef, ResidueRef};
 /// # Ok::<(), mmcif_model::ReadError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AltlocPolicy {
     /// Keeps the alternate location that comes first among the atoms of the
     /// position.
@@ -60,21 +61,60 @@ impl Model {
     /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
     pub fn single_conformer(&self, policy: AltlocPolicy) -> Model {
+        self.single_conformer_by(|position| choose_altloc(position, policy))
+    }
+
+    /// Returns a copy of the model that keeps, at each residue position, the
+    /// alternate location `choose` returns.
+    ///
+    /// Positions are found as [`Model::single_conformer`] finds them. `choose`
+    /// is called once for each position whose atoms have an alternate
+    /// location, with the residues at that position in order, and returns the
+    /// alternate location to keep there. `None`, or an alternate location the
+    /// position does not have, keeps only the atoms with none. Atoms with no
+    /// alternate location are always kept, and residues left with no atoms are
+    /// removed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mmcif_model::AltLoc;
+    ///
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let model = structure.first_model().unwrap();
+    /// let lowest = model.single_conformer_by(|position| {
+    ///     position
+    ///         .iter()
+    ///         .flat_map(|residue| residue.atoms())
+    ///         .filter(|atom| !atom.altloc().is_none())
+    ///         .min_by(|a, b| a.occupancy().total_cmp(&b.occupancy()))
+    ///         .map(|atom| atom.altloc())
+    /// });
+    ///
+    /// assert!(lowest.altlocs().iter().all(|&altloc| altloc != AltLoc::new('A')));
+    /// # Ok::<(), mmcif_model::ReadError>(())
+    /// ```
+    pub fn single_conformer_by<F>(&self, mut choose: F) -> Model
+    where
+        F: FnMut(&[ResidueRef<'_>]) -> Option<AltLoc>,
+    {
         let mut builder = ModelBuilder::derived_from(self);
         builder.reserve_atoms(self.atom_count());
         for chain in self.chains() {
-            copy_single_conformer_chain(self, &mut builder, chain, policy);
+            copy_single_conformer_chain(self, &mut builder, chain, &mut choose);
         }
         builder.finish()
     }
 }
 
-fn copy_single_conformer_chain(
+fn copy_single_conformer_chain<F>(
     model: &Model,
     builder: &mut ModelBuilder,
     chain: ChainRef<'_>,
-    policy: AltlocPolicy,
-) {
+    choose: &mut F,
+) where
+    F: FnMut(&[ResidueRef<'_>]) -> Option<AltLoc>,
+{
     let slot = builder.new_chain(
         chain.label_asym().clone(),
         chain.auth_asym().clone(),
@@ -89,7 +129,11 @@ fn copy_single_conformer_chain(
             .take_while(|residue| residue.same_position(first))
             .count();
         let (group, tail) = rest.split_at(group_len);
-        let chosen = choose_altloc(group, policy);
+        let has_altloc = group
+            .iter()
+            .flat_map(|residue| residue.atoms())
+            .any(|atom| !atom.altloc().is_none());
+        let chosen = if has_altloc { choose(group) } else { None };
         for residue in group {
             let kept: Vec<usize> = residue
                 .atoms()
