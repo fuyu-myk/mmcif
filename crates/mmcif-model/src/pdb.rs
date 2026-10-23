@@ -130,8 +130,8 @@ pub(crate) fn decode_hybrid36(field: &str, width: u32) -> Option<i64> {
 
 fn parse_charge(field: &str) -> Option<i8> {
     let (digit, negative) = match field.trim().as_bytes() {
-        [digit, b'+'] | [digit] => (*digit, false),
-        [digit, b'-'] => (*digit, true),
+        [digit, b'+'] | [b'+', digit] | [digit] => (*digit, false),
+        [digit, b'-'] | [b'-', digit] => (*digit, true),
         _ => return None,
     };
     let magnitude = i8::try_from(char::from(digit).to_digit(10)?).ok()?;
@@ -512,9 +512,9 @@ fn build_numbering(chains: &[PdbChain], roles: &[Role]) -> Numbering {
 /// oligomeric count.
 ///
 /// A blank element is inferred from the atom name, a blank occupancy reads
-/// as 1 and a blank B-factor as NaN. A formal charge is a digit and a sign,
-/// such as `2+`, or a bare digit, which reads as positive. Serial and residue
-/// numbers may use the hybrid-36 encoding.
+/// as 1 and a blank B-factor as NaN. A formal charge is a digit and a sign in
+/// either order, such as `2+` or `+2`, or a bare digit, which reads as
+/// positive. Serial and residue numbers may use the hybrid-36 encoding.
 ///
 /// # Errors
 ///
@@ -711,9 +711,16 @@ mod tests {
         assert_eq!(parse_charge(" 0"), Some(0));
         assert_eq!(parse_charge("0 "), Some(0));
         assert_eq!(parse_charge(" 2"), Some(2));
-        assert_eq!(parse_charge("+2"), None);
         assert_eq!(parse_charge(" -"), None);
         assert_eq!(parse_charge("12"), None);
+    }
+
+    #[test]
+    fn reads_a_sign_before_the_digit() {
+        assert_eq!(parse_charge("+2"), Some(2));
+        assert_eq!(parse_charge("-1"), Some(-1));
+        assert_eq!(parse_charge("+-"), None);
+        assert_eq!(parse_charge("-+"), None);
     }
 
     #[test]
