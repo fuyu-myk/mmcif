@@ -81,7 +81,7 @@ impl PendingRecord {
 ///
 /// let mut builder = IndexBuilder::new("2026-10-20");
 /// for block in document.blocks() {
-///     builder.add(&Component::from_block(block)?)?;
+///     builder.add(&Component::from_block(&block)?)?;
 /// }
 /// let mut bytes = Vec::new();
 /// builder.finish(&mut bytes)?;
@@ -130,7 +130,7 @@ impl IndexBuilder {
     /// use mmcif_cif::Document;
     ///
     /// let document = Document::parse("data_ZN\n_chem_comp.id ZN\n")?;
-    /// let zinc = Component::from_block(document.block(0).unwrap())?;
+    /// let zinc = Component::from_block(&document.block(0).unwrap())?;
     ///
     /// let mut builder = IndexBuilder::new("2026-10-20");
     /// builder.add(&zinc)?;
@@ -177,7 +177,7 @@ impl IndexBuilder {
     /// use mmcif_cif::Document;
     ///
     /// let document = Document::parse("data_ZN\n_chem_comp.id ZN\n")?;
-    /// let zinc = Component::from_block(document.block(0).unwrap())?;
+    /// let zinc = Component::from_block(&document.block(0).unwrap())?;
     ///
     /// let mut builder = IndexBuilder::new("2026-10-20");
     /// builder.add(&zinc)?;
@@ -272,7 +272,7 @@ pub fn build_index(
 ) -> Result<BuildSummary, CcdError> {
     let mut builder = IndexBuilder::new(release);
     for streamed in stream_blocks(source_text) {
-        builder.add(&Component::from_block(streamed?.block())?)?;
+        builder.add(&Component::from_block(&streamed?.block())?)?;
     }
     builder.finish(out)
 }

@@ -113,20 +113,21 @@ impl Component {
     /// use mmcif_cif::Document;
     ///
     /// let document = Document::parse(include_str!("../tests/fixtures/components-sample.cif"))?;
-    /// let alanine = Component::from_block(document.block(0).unwrap())?;
+    /// let alanine = Component::from_block(&document.block(0).unwrap())?;
     /// assert_eq!(alanine.id(), "ALA");
     /// assert_eq!(alanine.one_letter_code(), Some("A"));
     ///
     /// let unnamed = Document::parse("data_X\n_chem_comp.name x\n")?;
-    /// let error = Component::from_block(unnamed.block(0).unwrap()).unwrap_err();
+    /// let error = Component::from_block(&unnamed.block(0).unwrap()).unwrap_err();
     /// assert!(matches!(error, CcdError::MissingItem { item, .. } if item == "_chem_comp.id"));
     ///
     /// let structure = Document::parse("data_1ABC\nloop_\n_chem_comp.id\nHOH\nZN\n")?;
-    /// let error = Component::from_block(structure.block(0).unwrap()).unwrap_err();
+    /// let error = Component::from_block(&structure.block(0).unwrap()).unwrap_err();
     /// assert!(matches!(error, CcdError::ManyComponents { count: 2, .. }));
     /// # Ok::<(), CcdError>(())
     /// ```
-    pub fn from_block(block: Block<'_>) -> Result<Component, CcdError> {
+    pub fn from_block(block: &Block<'_>) -> Result<Component, CcdError> {
+        let block = *block;
         let chem_comp = Table::new(block, "chem_comp");
         let count = chem_comp.row_count();
         if count > 1 {
@@ -179,14 +180,15 @@ impl Component {
     /// ZN ZN ZN
     /// ";
     /// let document = Document::parse(text)?;
-    /// let components = Component::all_from_block(document.block(0).unwrap())?;
+    /// let components = Component::all_from_block(&document.block(0).unwrap())?;
     ///
     /// let ids: Vec<&str> = components.iter().map(Component::id).collect();
     /// assert_eq!(ids, ["HOH", "ZN"]);
     /// assert_eq!(components[1].atoms()[0].name(), "ZN");
     /// # Ok::<(), CcdError>(())
     /// ```
-    pub fn all_from_block(block: Block<'_>) -> Result<Vec<Component>, CcdError> {
+    pub fn all_from_block(block: &Block<'_>) -> Result<Vec<Component>, CcdError> {
+        let block = *block;
         let chem_comp = Table::new(block, "chem_comp");
         let ids = (0..chem_comp.row_count())
             .map(|row| chem_comp.required("id", row))
@@ -386,7 +388,7 @@ TST C1 FE SING N N
 
     fn component(text: &str) -> Result<Component, CcdError> {
         let document = Document::parse(text).unwrap();
-        Component::from_block(document.block(0).unwrap())
+        Component::from_block(&document.block(0).unwrap())
     }
 
     #[test]
@@ -499,7 +501,7 @@ TST C1 O1 DOUB
 
     fn all_components(text: &str) -> Result<Vec<Component>, CcdError> {
         let document = Document::parse(text).unwrap();
-        Component::all_from_block(document.block(0).unwrap())
+        Component::all_from_block(&document.block(0).unwrap())
     }
 
     #[test]

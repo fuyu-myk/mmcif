@@ -53,7 +53,7 @@ fn lookups_match_components_read_directly() {
     let index = sample_index();
     let document = Document::open(fixture_path()).unwrap();
     for block in document.blocks() {
-        let expected = Component::from_block(block).unwrap();
+        let expected = Component::from_block(&block).unwrap();
         assert_eq!(index.get(block.name()).unwrap(), Some(expected));
     }
 }

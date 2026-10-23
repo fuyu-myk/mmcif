@@ -268,7 +268,7 @@ proptest! {
         let document = Document::parse(text).unwrap();
         for block in document.blocks() {
             let id = block.name();
-            let direct = Component::from_block(block).unwrap();
+            let direct = Component::from_block(&block).unwrap();
             assert_matches_spec(&direct, id, &specs[id]);
             prop_assert_eq!(index.get(id).unwrap(), Some(direct));
         }
