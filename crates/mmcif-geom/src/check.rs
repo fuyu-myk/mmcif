@@ -23,22 +23,7 @@ pub(crate) fn point_count(count: usize) -> Result<(), GeomError> {
     }
 }
 
-pub(crate) fn finite_points(points: &[[f64; 3]]) -> Result<(), GeomError> {
-    match points.iter().position(|&point| !is_finite(point)) {
-        Some(index) => Err(GeomError::NonFiniteCoordinate { index }),
-        None => Ok(()),
-    }
-}
-
-pub(crate) fn query_point(point: [f64; 3]) -> Result<[f64; 3], GeomError> {
-    if is_finite(point) {
-        Ok(point)
-    } else {
-        Err(GeomError::NonFiniteQuery)
-    }
-}
-
-fn is_finite(point: [f64; 3]) -> bool {
+pub(crate) fn is_finite(point: [f64; 3]) -> bool {
     point.iter().all(|value| value.is_finite())
 }
 

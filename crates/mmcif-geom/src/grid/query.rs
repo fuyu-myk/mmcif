@@ -1,9 +1,11 @@
+use std::borrow::Borrow;
 use std::ops::Range;
 
 use super::NeighbourGrid;
 use crate::cell::{CellRange, distance_squared};
 use crate::check;
 use crate::error::GeomError;
+use crate::radius::Radius;
 
 struct Probe {
     point: [f64; 3],
@@ -25,64 +27,53 @@ impl Probe {
             cells,
         }
     }
-
-    fn checked(point: [f64; 3], radius: f64, cell_size: f64) -> Result<Self, GeomError> {
-        let radius = check::radius(radius)?;
-        let point = check::query_point(point)?;
-        Ok(Self::new(point, radius, cell_size))
-    }
 }
 
 impl NeighbourGrid {
     /// Returns the indices of the points within `radius` of `point`, in
     /// ascending order.
     ///
-    /// # Errors
-    ///
-    /// Returns [`GeomError::InvalidRadius`] if `radius` is negative or NaN, and
-    /// [`GeomError::NonFiniteQuery`] if `point` has a NaN or infinite
-    /// coordinate.
+    /// A `point` with a NaN or infinite coordinate finds nothing.
     ///
     /// # Examples
     ///
     /// ```
-    /// use mmcif_geom::NeighbourGrid;
+    /// use mmcif_geom::{NeighbourGrid, Radius};
     ///
     /// let points = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [9.0, 0.0, 0.0]];
     /// let grid = NeighbourGrid::new(&points, 4.0)?;
+    /// let radius = Radius::new(2.0)?;
     ///
-    /// assert_eq!(grid.within([1.0, 0.0, 0.0], 2.0)?, [0, 1]);
-    /// assert!(grid.within([20.0, 0.0, 0.0], 2.0)?.is_empty());
+    /// assert_eq!(grid.within([1.0, 0.0, 0.0], radius), [0, 1]);
+    /// assert!(grid.within([20.0, 0.0, 0.0], radius).is_empty());
     /// # Ok::<(), mmcif_geom::GeomError>(())
     /// ```
-    pub fn within(&self, point: [f64; 3], radius: f64) -> Result<Vec<u32>, GeomError> {
-        let probe = Probe::checked(point, radius, self.cell_size)?;
+    pub fn within(&self, point: [f64; 3], radius: Radius) -> Vec<u32> {
         let mut found = Vec::new();
-        self.visit_matches(&probe, |index, _| found.push(index));
+        if let Some(probe) = self.probe(point, radius.get()) {
+            self.visit_matches(&probe, |index, _| found.push(index));
+        }
         found.sort_unstable();
-        Ok(found)
+        found
     }
 
     /// Calls `visit` with the index and distance of each point within `radius`
     /// of `point`, in no particular order.
     ///
-    /// # Errors
-    ///
-    /// Returns [`GeomError::InvalidRadius`] if `radius` is negative or NaN, and
-    /// [`GeomError::NonFiniteQuery`] if `point` has a NaN or infinite
-    /// coordinate. `visit` is not called when an error is returned.
+    /// A `point` with a NaN or infinite coordinate finds nothing, so `visit` is
+    /// not called.
     ///
     /// # Examples
     ///
     /// ```
-    /// use mmcif_geom::NeighbourGrid;
+    /// use mmcif_geom::{NeighbourGrid, Radius};
     ///
-    /// let grid = NeighbourGrid::new(&[[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]], 4.0)?;
+    /// let grid = NeighbourGrid::new([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]], 4.0)?;
     ///
     /// let mut found = Vec::new();
-    /// grid.for_each_within([0.0, 0.0, 0.0], 5.0, |index, distance| {
+    /// grid.for_each_within([0.0, 0.0, 0.0], Radius::new(5.0)?, |index, distance| {
     ///     found.push((index, distance));
-    /// })?;
+    /// });
     /// found.sort_by_key(|&(index, _)| index);
     ///
     /// assert_eq!(found, [(0, 0.0), (1, 5.0)]);
@@ -91,56 +82,46 @@ impl NeighbourGrid {
     pub fn for_each_within(
         &self,
         point: [f64; 3],
-        radius: f64,
+        radius: Radius,
         mut visit: impl FnMut(u32, f64),
-    ) -> Result<(), GeomError> {
-        let probe = Probe::checked(point, radius, self.cell_size)?;
-        self.visit_matches(&probe, |index, squared| visit(index, squared.sqrt()));
-        Ok(())
+    ) {
+        if let Some(probe) = self.probe(point, radius.get()) {
+            self.visit_matches(&probe, |index, squared| visit(index, squared.sqrt()));
+        }
     }
 
     /// Returns the index and distance of the point closest to `point`, if one
     /// lies within `max_radius`.
     ///
     /// When several points are equally close, the one with the lowest index
-    /// is returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GeomError::InvalidRadius`] if `max_radius` is negative or NaN,
-    /// and [`GeomError::NonFiniteQuery`] if `point` has a NaN or infinite
-    /// coordinate.
+    /// is returned. A `point` with a NaN or infinite coordinate finds nothing.
     ///
     /// # Examples
     ///
     /// ```
-    /// use mmcif_geom::NeighbourGrid;
+    /// use mmcif_geom::{NeighbourGrid, Radius};
     ///
     /// let points = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
     /// let grid = NeighbourGrid::new(&points, 4.0)?;
     ///
-    /// assert_eq!(grid.nearest([8.0, 0.0, 0.0], 5.0)?, Some((1, 2.0)));
-    /// assert_eq!(grid.nearest([5.0, 0.0, 0.0], 5.0)?, Some((0, 5.0)));
-    /// assert_eq!(grid.nearest([5.0, 0.0, 0.0], 4.0)?, None);
+    /// assert_eq!(grid.nearest([8.0, 0.0, 0.0], Radius::new(5.0)?), Some((1, 2.0)));
+    /// assert_eq!(grid.nearest([5.0, 0.0, 0.0], Radius::new(5.0)?), Some((0, 5.0)));
+    /// assert_eq!(grid.nearest([5.0, 0.0, 0.0], Radius::new(4.0)?), None);
+    /// assert_eq!(grid.nearest([50.0, 0.0, 0.0], Radius::INFINITE), Some((1, 40.0)));
     /// # Ok::<(), mmcif_geom::GeomError>(())
     /// ```
-    pub fn nearest(
-        &self,
-        point: [f64; 3],
-        max_radius: f64,
-    ) -> Result<Option<(u32, f64)>, GeomError> {
-        let max_radius = check::radius(max_radius)?;
-        let point = check::query_point(point)?;
+    pub fn nearest(&self, point: [f64; 3], max_radius: Radius) -> Option<(u32, f64)> {
+        let max_radius = max_radius.get();
         let mut radius = self.cell_size.min(max_radius);
         loop {
-            let probe = Probe::new(point, radius, self.cell_size);
+            let probe = self.probe(point, radius)?;
             if radius < max_radius && probe.cells.contains(self.index.occupied()) {
                 radius = max_radius;
                 continue;
             }
             let closest = self.closest(&probe);
             if closest.is_some() || radius >= max_radius {
-                return Ok(closest.map(|(index, squared)| (index, squared.sqrt())));
+                return closest.map(|(index, squared)| (index, squared.sqrt()));
             }
             radius = (radius * 2.0).min(max_radius);
         }
@@ -151,23 +132,19 @@ impl NeighbourGrid {
     /// Each pair is `(lower, higher)` by index, and the pairs are in ascending
     /// order.
     ///
-    /// # Errors
-    ///
-    /// Returns [`GeomError::InvalidRadius`] if `radius` is negative or NaN.
-    ///
     /// # Examples
     ///
     /// ```
-    /// use mmcif_geom::NeighbourGrid;
+    /// use mmcif_geom::{NeighbourGrid, Radius};
     ///
     /// let points = [[0.0, 0.0, 0.0], [9.0, 0.0, 0.0], [1.0, 0.0, 0.0], [9.5, 0.0, 0.0]];
     /// let grid = NeighbourGrid::new(&points, 4.0)?;
     ///
-    /// assert_eq!(grid.pairs_within(1.0)?, [(0, 2), (1, 3)]);
+    /// assert_eq!(grid.pairs_within(Radius::new(1.0)?), [(0, 2), (1, 3)]);
     /// # Ok::<(), mmcif_geom::GeomError>(())
     /// ```
-    pub fn pairs_within(&self, radius: f64) -> Result<Vec<(u32, u32)>, GeomError> {
-        let radius = check::radius(radius)?;
+    pub fn pairs_within(&self, radius: Radius) -> Vec<(u32, u32)> {
+        let radius = radius.get();
         let radius_squared = radius * radius;
         let mut pairs = Vec::new();
         let mut runs = Vec::new();
@@ -186,46 +163,60 @@ impl NeighbourGrid {
             }
         }
         pairs.sort_unstable();
-        Ok(pairs)
+        pairs
     }
 
     /// Returns an `(other, point)` index pair for each point in `others` that
     /// lies within `radius` of a point in the grid.
     ///
-    /// Pairs are ordered by `other` and then by `point`.
+    /// `others` is any sequence of points or references to them. Pairs are
+    /// ordered by `other` and then by `point`. A point in `others` with a NaN
+    /// or infinite coordinate is in no pair.
     ///
     /// # Errors
     ///
-    /// Returns [`GeomError::InvalidRadius`] if `radius` is negative or NaN,
-    /// [`GeomError::NonFiniteCoordinate`] if a point in `others` has a NaN or
-    /// infinite coordinate, and [`GeomError::TooManyPoints`] if `others` holds
-    /// more than `u32::MAX` points.
+    /// Returns [`GeomError::TooManyPoints`] if `others` holds more than
+    /// `u32::MAX` points.
     ///
     /// # Examples
     ///
     /// ```
-    /// use mmcif_geom::NeighbourGrid;
+    /// use mmcif_geom::{NeighbourGrid, Radius};
     ///
-    /// let grid = NeighbourGrid::new(&[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], 4.0)?;
+    /// let grid = NeighbourGrid::new([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], 4.0)?;
     /// let others = [[10.5, 0.0, 0.0], [50.0, 0.0, 0.0], [0.5, 0.0, 0.0]];
     ///
-    /// assert_eq!(grid.contacts(&others, 1.0)?, [(0, 1), (2, 0)]);
+    /// assert_eq!(grid.contacts(&others, Radius::new(1.0)?)?, [(0, 1), (2, 0)]);
     /// # Ok::<(), mmcif_geom::GeomError>(())
     /// ```
-    pub fn contacts(&self, others: &[[f64; 3]], radius: f64) -> Result<Vec<(u32, u32)>, GeomError> {
-        let radius = check::radius(radius)?;
-        check::point_count(others.len())?;
-        check::finite_points(others)?;
+    pub fn contacts<P>(
+        &self,
+        others: impl IntoIterator<Item = P>,
+        radius: Radius,
+    ) -> Result<Vec<(u32, u32)>, GeomError>
+    where
+        P: Borrow<[f64; 3]>,
+    {
         let mut contacts = Vec::new();
         let mut found = Vec::new();
-        for (&point, other) in others.iter().zip(0u32..) {
-            let probe = Probe::new(point, radius, self.cell_size);
+        let mut others = others.into_iter().enumerate();
+        while let Some((index, point)) = others.next() {
+            let Ok(other) = u32::try_from(index) else {
+                return Err(GeomError::TooManyPoints(index + 1 + others.count()));
+            };
+            let Some(probe) = self.probe(*point.borrow(), radius.get()) else {
+                continue;
+            };
             found.clear();
             self.visit_matches(&probe, |index, _| found.push(index));
             found.sort_unstable();
             contacts.extend(found.iter().map(|&index| (other, index)));
         }
         Ok(contacts)
+    }
+
+    fn probe(&self, point: [f64; 3], radius: f64) -> Option<Probe> {
+        check::is_finite(point).then(|| Probe::new(point, radius, self.cell_size))
     }
 
     fn closest(&self, probe: &Probe) -> Option<(u32, f64)> {

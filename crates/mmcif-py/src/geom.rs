@@ -1,12 +1,30 @@
-use mmcif_geom::NeighbourGrid;
+use mmcif_geom::{GeomError, NeighbourGrid, Radius};
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::hierarchy::PyModel;
 
-fn geom_error(error: mmcif_geom::GeomError) -> PyErr {
+fn geom_error(error: GeomError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn checked_radius(radius: f64) -> PyResult<Radius> {
+    Radius::new(radius).map_err(geom_error)
+}
+
+fn is_finite(point: &[f64; 3]) -> bool {
+    point.iter().all(|value| value.is_finite())
+}
+
+fn query_point(point: [f64; 3]) -> PyResult<[f64; 3]> {
+    if is_finite(&point) {
+        Ok(point)
+    } else {
+        Err(PyValueError::new_err(
+            "query point has a non-finite coordinate",
+        ))
+    }
 }
 
 fn rows(array: &PyReadonlyArray2<'_, f64>) -> PyResult<Vec<[f64; 3]>> {
@@ -121,9 +139,9 @@ impl PyNeighbourGrid {
         point: [f64; 3],
         radius: f64,
     ) -> PyResult<Bound<'py, PyArray1<u32>>> {
-        let found = py
-            .detach(|| self.inner.within(point, radius))
-            .map_err(geom_error)?;
+        let radius = checked_radius(radius)?;
+        let point = query_point(point)?;
+        let found = py.detach(|| self.inner.within(point, radius));
         Ok(PyArray1::from_vec(py, found))
     }
 
@@ -154,8 +172,9 @@ impl PyNeighbourGrid {
         point: [f64; 3],
         max_radius: f64,
     ) -> PyResult<Option<(u32, f64)>> {
-        py.detach(|| self.inner.nearest(point, max_radius))
-            .map_err(geom_error)
+        let max_radius = checked_radius(max_radius)?;
+        let point = query_point(point)?;
+        Ok(py.detach(|| self.inner.nearest(point, max_radius)))
     }
 
     /// Return every pair of points within ``radius`` of each other, as a uint32 NumPy
@@ -179,9 +198,8 @@ impl PyNeighbourGrid {
         py: Python<'py>,
         radius: f64,
     ) -> PyResult<Bound<'py, PyArray2<u32>>> {
-        let pairs = py
-            .detach(|| self.inner.pairs_within(radius))
-            .map_err(geom_error)?;
+        let radius = checked_radius(radius)?;
+        let pairs = py.detach(|| self.inner.pairs_within(radius));
         pair_array(py, pairs)
     }
 
@@ -211,6 +229,10 @@ impl PyNeighbourGrid {
         radius: f64,
     ) -> PyResult<Bound<'py, PyArray2<u32>>> {
         let others = rows(&others)?;
+        let radius = checked_radius(radius)?;
+        if let Some(index) = others.iter().position(|point| !is_finite(point)) {
+            return Err(geom_error(GeomError::NonFiniteCoordinate { index }));
+        }
         let pairs = py
             .detach(|| self.inner.contacts(&others, radius))
             .map_err(geom_error)?;

@@ -47,3 +47,16 @@ def test_invalid_input():
     grid = m.NeighbourGrid(np.zeros((1, 3)))
     with pytest.raises(ValueError):
         grid.within((0.0, 0.0, 0.0), -1.0)
+    for query in [(np.nan, 0.0, 0.0), (0.0, np.inf, 0.0), (0.0, 0.0, -np.inf)]:
+        with pytest.raises(ValueError, match="query point has a non-finite coordinate"):
+            grid.within(query, 1.0)
+        with pytest.raises(ValueError, match="query point has a non-finite coordinate"):
+            grid.nearest(query)
+    with pytest.raises(ValueError, match="point 1 has a non-finite coordinate"):
+        grid.contacts(np.array([[0.0, 0, 0], [0, 0, np.inf]]), 1.0)
+    with pytest.raises(ValueError, match="radius must be a non-negative number"):
+        grid.nearest((0.0, 0.0, 0.0), -1.0)
+    with pytest.raises(ValueError, match="radius must be a non-negative number"):
+        grid.pairs_within(np.nan)
+    with pytest.raises(ValueError, match="radius must be a non-negative number"):
+        grid.contacts(np.zeros((1, 3)), -1.0)

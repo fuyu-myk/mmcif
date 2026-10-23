@@ -2,11 +2,10 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};
-use mmcif_geom::NeighbourGrid;
+use mmcif_geom::{NeighbourGrid, Radius};
 
 const POINT_COUNT: usize = 100_000;
 const BOX_EDGE: f64 = 100.0;
-const RADIUS: f64 = 4.0;
 const CELL_SIZE: f64 = 4.0;
 const SEED: u64 = 0x6d6d_6369_6667_656f;
 
@@ -36,6 +35,7 @@ fn random_points() -> Vec<[f64; 3]> {
 fn grid(c: &mut Criterion) {
     let points = random_points();
     let grid = NeighbourGrid::new(&points, CELL_SIZE).expect("generated points are finite");
+    let radius = Radius::new(4.0).expect("4.0 is a valid radius");
     let mut group = c.benchmark_group("grid");
     group
         .sampling_mode(SamplingMode::Flat)
@@ -46,16 +46,13 @@ fn grid(c: &mut Criterion) {
         b.iter(|| NeighbourGrid::new(black_box(&points), CELL_SIZE))
     });
     group.bench_function("pairs_within_4A_100k", |b| {
-        b.iter(|| grid.pairs_within(black_box(RADIUS)))
+        b.iter(|| grid.pairs_within(black_box(radius)))
     });
     group.bench_function("within_4A_100k", |b| {
         b.iter(|| {
             points
                 .iter()
-                .map(|&point| {
-                    grid.within(black_box(point), RADIUS)
-                        .map_or(0, |found| found.len())
-                })
+                .map(|&point| grid.within(black_box(point), radius).len())
                 .sum::<usize>()
         })
     });

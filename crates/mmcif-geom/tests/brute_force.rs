@@ -1,4 +1,4 @@
-use mmcif_geom::NeighbourGrid;
+use mmcif_geom::{NeighbourGrid, Radius};
 use proptest::array::uniform3;
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -155,11 +155,12 @@ proptest! {
         for point in queries_for(&points, &generated) {
             let expected = brute_within(&points, point, radius);
             let indices: Vec<u32> = expected.iter().map(|&(index, _)| index).collect();
-            prop_assert_eq!(grid.within(point, radius).unwrap(), indices);
+            prop_assert_eq!(grid.within(point, Radius::new(radius).unwrap()), indices);
 
             let mut visited = Vec::new();
-            grid.for_each_within(point, radius, |index, distance| visited.push((index, distance)))
-                .unwrap();
+            grid.for_each_within(point, Radius::new(radius).unwrap(), |index, distance| {
+                visited.push((index, distance))
+            });
             visited.sort_by_key(|&(index, _)| index);
             let distances: Vec<(u32, f64)> = expected
                 .iter()
@@ -184,12 +185,12 @@ proptest! {
         let query = [centre; 3];
         let mut point = query;
         point[axis] = coordinate;
-        let grid = NeighbourGrid::new(&[point], boundary.abs()).unwrap();
+        let grid = NeighbourGrid::new([point], boundary.abs()).unwrap();
         let expected: Vec<u32> = brute_within(&[point], query, radius)
             .into_iter()
             .map(|(index, _)| index)
             .collect();
-        prop_assert_eq!(grid.within(query, radius).unwrap(), expected);
+        prop_assert_eq!(grid.within(query, Radius::new(radius).unwrap()), expected);
     }
 
     #[test]
@@ -202,7 +203,7 @@ proptest! {
         let grid = NeighbourGrid::new(&points, cell_size).unwrap();
         for point in queries_for(&points, &generated) {
             prop_assert_eq!(
-                grid.nearest(point, max_radius).unwrap(),
+                grid.nearest(point, Radius::new(max_radius).unwrap()),
                 brute_nearest(&points, point, max_radius)
             );
         }
@@ -215,7 +216,10 @@ proptest! {
         radius in radius(),
     ) {
         let grid = NeighbourGrid::new(&points, cell_size).unwrap();
-        prop_assert_eq!(grid.pairs_within(radius).unwrap(), brute_pairs(&points, radius));
+        prop_assert_eq!(
+            grid.pairs_within(Radius::new(radius).unwrap()),
+            brute_pairs(&points, radius)
+        );
     }
 
     #[test]
@@ -226,6 +230,9 @@ proptest! {
         radius in radius(),
     ) {
         let grid = NeighbourGrid::new(&points, cell_size).unwrap();
-        prop_assert_eq!(grid.contacts(&others, radius).unwrap(), brute_contacts(&points, &others, radius));
+        prop_assert_eq!(
+            grid.contacts(&others, Radius::new(radius).unwrap()).unwrap(),
+            brute_contacts(&points, &others, radius)
+        );
     }
 }
