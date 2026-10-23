@@ -51,7 +51,10 @@ impl From<Loaded> for PyStructure {
     }
 }
 
-fn wrap(result: Result<Structure, ReadError>) -> PyResult<PyStructure> {
+fn wrap<T>(result: Result<T, ReadError>) -> PyResult<PyStructure>
+where
+    PyStructure: From<T>,
+{
     result.map(PyStructure::from).map_err(read_error)
 }
 
@@ -67,10 +70,13 @@ fn options(first_model_only: bool, lenient: bool) -> ReadOptions {
         .lenient(lenient)
 }
 
-fn first_block_with(
-    document: Result<Document, mmcif_cif::Error>,
+fn first_block_with<E>(
+    document: Result<Document, E>,
     options: &ReadOptions,
-) -> Result<Loaded, ReadError> {
+) -> Result<Loaded, ReadError>
+where
+    ReadError: From<E>,
+{
     let document = document?;
     let block = document.block(0).ok_or(ReadError::NoDataBlock)?;
     Structure::from_block_with(&block, options)
@@ -211,6 +217,8 @@ pub fn read_pdb(
 
 /// Parse a structure from mmCIF text.
 ///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
+///
 /// Raises
 /// ------
 /// ReadError
@@ -224,11 +232,20 @@ pub fn read_pdb(
 /// >>> structure.entry_id
 /// '1CRN'
 #[pyfunction]
-pub fn parse_mmcif(py: Python<'_>, text: String) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::parse_mmcif(&text)))
+#[pyo3(signature = (text, *, first_model_only = false, lenient = false))]
+pub fn parse_mmcif(
+    py: Python<'_>,
+    text: String,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    wrap(py.detach(move || first_block_with(Document::parse(text), &options)))
 }
 
 /// Parse a structure from BinaryCIF bytes.
+///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
 ///
 /// Raises
 /// ------
@@ -243,11 +260,23 @@ pub fn parse_mmcif(py: Python<'_>, text: String) -> PyResult<PyStructure> {
 /// >>> structure.entry_id
 /// '1CRN'
 #[pyfunction]
-pub fn parse_bcif(py: Python<'_>, data: Vec<u8>) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::parse_bcif(&data)))
+#[pyo3(signature = (data, *, first_model_only = false, lenient = false))]
+pub fn parse_bcif(
+    py: Python<'_>,
+    data: Vec<u8>,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    wrap(py.detach(|| {
+        let document = Document::from_bcif(&data).map_err(mmcif_cif::Error::from);
+        first_block_with(document, &options)
+    }))
 }
 
 /// Parse a structure from PDB text.
+///
+/// ``first_model_only`` and ``lenient`` work as in ``read``.
 ///
 /// Raises
 /// ------
@@ -261,8 +290,15 @@ pub fn parse_bcif(py: Python<'_>, data: Vec<u8>) -> PyResult<PyStructure> {
 /// >>> structure.entry_id
 /// '1ABC'
 #[pyfunction]
-pub fn parse_pdb(py: Python<'_>, text: String) -> PyResult<PyStructure> {
-    wrap(py.detach(|| mmcif_model::parse_pdb(&text)))
+#[pyo3(signature = (text, *, first_model_only = false, lenient = false))]
+pub fn parse_pdb(
+    py: Python<'_>,
+    text: String,
+    first_model_only: bool,
+    lenient: bool,
+) -> PyResult<PyStructure> {
+    let options = options(first_model_only, lenient);
+    wrap(py.detach(|| mmcif_model::parse_pdb_with(&text, &options)))
 }
 
 #[pymethods]

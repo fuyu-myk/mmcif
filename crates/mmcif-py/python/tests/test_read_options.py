@@ -75,3 +75,27 @@ def test_nothing_is_skipped_without_a_malformed_category(pathologies_path, cramb
 def test_the_options_are_keywords(pathologies_path):
     with pytest.raises(TypeError):
         m.read(pathologies_path, True)
+
+
+def test_the_parse_functions_take_the_options(pathologies_path, legacy_pdb_path, crambin_bcif_path):
+    text = pathologies_path.read_text()
+    assert [model.number for model in m.parse_mmcif(text, first_model_only=True).models] == [1]
+    broken = text.replace(*BROKEN_ASSEMBLIES)
+    with pytest.raises(m.ReadError):
+        m.parse_mmcif(broken)
+    lenient = m.parse_mmcif(broken, lenient=True)
+    assert lenient.assemblies == []
+    assert [error.split(".")[0] for error in lenient.skipped] == ["_pdbx_struct_assembly_gen"]
+
+    pdb_text = legacy_pdb_path.read_text()
+    assert len(m.parse_pdb(pdb_text, first_model_only=True).models) == 1
+    header, rest = pdb_text.split("\n", 1)
+    broken_pdb = f"{header}\n{BROKEN_REMARK_350}{rest}"
+    with pytest.raises(m.ReadError, match="PDB line 5"):
+        m.parse_pdb(broken_pdb)
+    assert m.parse_pdb(broken_pdb, lenient=True).skipped[0].startswith("PDB line 5:")
+
+    crambin = m.parse_bcif(crambin_bcif_path.read_bytes(), first_model_only=True, lenient=True)
+    assert crambin.skipped == [] and crambin.models[0].atom_count == 327
+    with pytest.raises(TypeError):
+        m.parse_mmcif(text, True)
