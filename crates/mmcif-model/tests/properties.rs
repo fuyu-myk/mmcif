@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use mmcif_model::{AltlocPolicy, AssemblyId, LabelResidueKey, LabelSeqId, parse_mmcif};
+use mmcif_model::{AltlocPolicy, AssemblyId, LabelResidueKey, LabelSeqId, OperatorId, parse_mmcif};
 use proptest::prelude::*;
 
 const HEADER: &str = "loop_\n_atom_site.label_asym_id\n_atom_site.auth_asym_id\n_atom_site.label_comp_id\n\
@@ -104,8 +104,17 @@ proptest! {
         let assembled = structure.assemble(&AssemblyId::new("1"), model).unwrap();
         prop_assert_eq!(assembled.chains().len(), model.chains().len());
         for (copy, original) in assembled.chains().zip(model.chains()) {
-            let keys = |chain: mmcif_model::ChainRef<'_>| chain.residues().map(|r| r.key()).collect::<Vec<_>>();
-            prop_assert_eq!(keys(copy), keys(original));
+            let addresses = |chain: mmcif_model::ChainRef<'_>| {
+                chain
+                    .residues()
+                    .map(|r| {
+                        let key = r.key();
+                        (key.asym, key.label_seq, key.auth_seq, key.ins_code, key.comp)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            prop_assert_eq!(addresses(copy), addresses(original));
+            prop_assert!(copy.residues().all(|r| r.key().operators.as_ref() == [OperatorId::new("1")]));
             prop_assert_eq!(copy.positions(), original.positions());
         }
     }

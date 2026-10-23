@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::ids::{AuthAsymId, AuthSeqId, CompId, InsCode, LabelAsymId, LabelSeqId};
+use crate::ids::{AuthAsymId, AuthSeqId, CompId, InsCode, LabelAsymId, LabelSeqId, OperatorId};
 
 /// A residue address in author numbering: author chain, residue number and
 /// insertion code.
@@ -66,10 +66,13 @@ impl fmt::Display for LabelResidueKey {
 }
 
 /// The full address of a residue in a model: label chain, label and author
-/// residue numbers, insertion code and component.
+/// residue numbers, insertion code, component, and the assembly operators
+/// that placed its chain.
 ///
 /// It displays as `chain/label/author/component`, with `.` for a missing
-/// label number and the insertion code after the author number.
+/// label number and the insertion code after the author number. A residue of
+/// an assembled chain adds `@` and its operators, separated by commas, as in
+/// `AA/2/100/SER@2`. Keys come from [`ResidueRef::key`](crate::ResidueRef::key).
 ///
 /// # Examples
 ///
@@ -87,6 +90,7 @@ impl fmt::Display for LabelResidueKey {
 /// # Ok::<(), mmcif_model::ReadError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct ResidueKey {
     /// The label chain id.
     pub asym: LabelAsymId,
@@ -98,6 +102,10 @@ pub struct ResidueKey {
     pub ins_code: InsCode,
     /// The chemical component id.
     pub comp: CompId,
+    /// The assembly operators that placed the residue's chain, in the order
+    /// [`ChainRef::operators`](crate::ChainRef::operators) gives them. Empty in
+    /// a deposited model.
+    pub operators: Box<[OperatorId]>,
 }
 
 impl fmt::Display for ResidueKey {
@@ -107,6 +115,11 @@ impl fmt::Display for ResidueKey {
             Some(seq) => write!(f, "{seq}")?,
             None => f.write_str(".")?,
         }
-        write!(f, "/{}{}/{}", self.auth_seq, self.ins_code, self.comp)
+        write!(f, "/{}{}/{}", self.auth_seq, self.ins_code, self.comp)?;
+        for (index, operator) in self.operators.iter().enumerate() {
+            f.write_str(if index == 0 { "@" } else { "," })?;
+            write!(f, "{operator}")?;
+        }
+        Ok(())
     }
 }

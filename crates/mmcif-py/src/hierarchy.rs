@@ -7,6 +7,16 @@ use mmcif_model::{
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
+
+type ResidueKeyTuple<'py> = (
+    String,
+    Option<u32>,
+    i32,
+    Option<String>,
+    String,
+    Bound<'py, PyTuple>,
+);
 
 fn code(value: Option<char>) -> Option<String> {
     value.map(String::from)
@@ -566,17 +576,24 @@ impl PyResidue {
         coordinates(py, self.inner.view().positions())
     }
 
-    /// The residue key ``(label_asym, label_seq, auth_seq, ins_code, comp)``.
+    /// The residue key ``(label_asym, label_seq, auth_seq, ins_code, comp,
+    /// operators)``, where ``operators`` is the tuple of assembly operators that
+    /// placed the residue's chain, empty in a deposited model.
     #[getter]
-    fn key(&self) -> (String, Option<u32>, i32, Option<String>, String) {
+    fn key<'py>(&self, py: Python<'py>) -> PyResult<ResidueKeyTuple<'py>> {
         let key = self.inner.view().key();
-        (
+        let operators = PyTuple::new(
+            py,
+            key.operators.iter().map(|operator| operator.to_string()),
+        )?;
+        Ok((
             key.asym.to_string(),
             key.label_seq.map(LabelSeqId::get),
             key.auth_seq.get(),
             code(key.ins_code.get()),
             key.comp.to_string(),
-        )
+            operators,
+        ))
     }
 
     /// The author address ``(auth_asym, auth_seq, ins_code)``.

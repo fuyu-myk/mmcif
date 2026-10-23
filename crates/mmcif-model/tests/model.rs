@@ -681,3 +681,39 @@ fn structures_with_missing_b_factors_equal_themselves() {
         parse_mmcif(&with_b_factors([".", "1.0"])).unwrap()
     );
 }
+
+#[test]
+fn assembled_residues_have_keys_that_find_them() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+    let dimer = structure.assemble(&AssemblyId::new("2"), model).unwrap();
+    let residues: Vec<_> = dimer.residues().collect();
+    assert_eq!(residues.len(), 12);
+    for residue in &residues {
+        assert_eq!(dimer.residue(&residue.key()), Some(*residue));
+    }
+    let keys: std::collections::HashSet<_> = residues.iter().map(|residue| residue.key()).collect();
+    assert_eq!(keys.len(), 12);
+
+    let copy = residues
+        .iter()
+        .find(|residue| residue.chain().operators() == ["2"])
+        .unwrap();
+    assert_eq!(copy.key().operators.as_ref(), [OperatorId::new("2")]);
+    assert_eq!(copy.key().to_string(), "AA/2/100/SER@2");
+
+    let product = structure.assemble(&AssemblyId::new("3"), model).unwrap();
+    let moved = product.residues().next().unwrap();
+    assert_eq!(moved.key().to_string(), "AA/2/100/SER@2,3");
+    assert_eq!(model.residue(&moved.key()), None);
+}
+
+#[test]
+fn deposited_residue_keys_name_no_operators() {
+    let structure = structure();
+    let model = structure.first_model().unwrap();
+    let alanine = model.chain("AA").unwrap().residues().nth(2).unwrap();
+    assert!(alanine.key().operators.is_empty());
+    assert_eq!(alanine.key().to_string(), "AA/3/100A/ALA");
+    assert_eq!(model.residue(&alanine.key()), Some(alanine));
+}

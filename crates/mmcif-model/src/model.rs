@@ -294,8 +294,9 @@ impl Model {
             .collect()
     }
 
-    /// Returns the residue that matches every field of `key` in the chain
-    /// [`Model::chain`] returns for `key.asym`, or `None` if there is none.
+    /// Returns the residue that matches every field of `key`, in the chain with
+    /// label id `key.asym` and assembly operators `key.operators`, or `None`
+    /// if there is none.
     ///
     /// # Examples
     ///
@@ -309,7 +310,10 @@ impl Model {
     /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
     pub fn residue(&self, key: &ResidueKey) -> Option<ResidueRef<'_>> {
-        self.chain(key.asym.as_str())?.residues().find(|residue| {
+        let chain = self.chains().find(|chain| {
+            chain.label_asym() == &key.asym && chain.operators() == &*key.operators
+        })?;
+        chain.residues().find(|residue| {
             residue.label_seq() == key.label_seq
                 && residue.auth_seq() == key.auth_seq
                 && residue.ins_code() == key.ins_code

@@ -423,6 +423,7 @@ impl<'a> ResidueRef<'a> {
             auth_seq: record.auth_seq,
             ins_code: record.ins_code,
             comp: record.comp.clone(),
+            operators: self.chain().operators().into(),
         }
     }
 

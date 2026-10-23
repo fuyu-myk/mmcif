@@ -31,7 +31,7 @@ def test_insertion_codes_and_microheterogeneity(structure):
     inserted = chain.residues_at_auth(100, "A")
     assert [r.comp for r in inserted] == ["ALA"]
     assert inserted[0].ins_code == "A"
-    assert inserted[0].key == ("AA", 3, 100, "A", "ALA")
+    assert inserted[0].key == ("AA", 3, 100, "A", "ALA", ())
     assert inserted[0].auth_key == ("H1", 100, "A")
     assert [r.comp for r in chain.residues_at_label(2)] == ["SER", "THR"]
 
@@ -199,3 +199,12 @@ def test_a_missing_b_factor_is_none_and_nan():
     model = m.parse_mmcif(text).models[0]
     assert [atom.b_factor for atom in model.atoms()] == [None, 12.5]
     assert np.isnan(model.b_factors[0]) and model.b_factors[1] == 12.5
+
+
+def test_assembled_residue_keys_name_their_operators(structure):
+    dimer = structure.assemble("2")
+    keys = [residue.key for residue in dimer.residues()]
+    assert len(set(keys)) == len(keys) == 12
+    copy = next(r for r in dimer.residues() if r.chain.operators == ["2"])
+    assert copy.key == ("AA", 2, 100, None, "SER", ("2",))
+    assert repr(copy) == "<Residue AA/2/100/SER@2>"
