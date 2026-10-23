@@ -6,7 +6,7 @@ use super::encoding::decode;
 use super::msgpack::{self, MsgValue};
 use super::record::Record;
 use super::{BcifError, BcifLimits, Budget};
-use crate::builder::DocumentBuilder;
+use crate::builder::{BuildError, DocumentBuilder};
 use crate::columns::{Numbers, NumericColumn, RawColumn};
 use crate::document::{Cell, Document};
 use crate::value::{Value, ValueKind};
@@ -18,7 +18,9 @@ pub(crate) fn decode_document(bytes: &[u8], limits: BcifLimits) -> Result<Docume
     let mut builder = DocumentBuilder::new();
     for block in root.list("dataBlocks")? {
         let block = Record::new(block, "dataBlocks")?;
-        builder.start_block(block.str("header")?)?;
+        builder
+            .start_block(block.str("header")?)
+            .map_err(document_error)?;
         for category in block.list("categories")? {
             add_category(
                 &mut builder,
@@ -28,7 +30,25 @@ pub(crate) fn decode_document(bytes: &[u8], limits: BcifLimits) -> Result<Docume
             )?;
         }
     }
-    Ok(builder.finish()?)
+    builder.finish().map_err(document_error)
+}
+
+fn document_error(error: BuildError) -> BcifError {
+    match error {
+        BuildError::InvalidBlockName(name) => BcifError::InvalidBlockName(name),
+        BuildError::InvalidTag(tag) => BcifError::InvalidTag(tag),
+        BuildError::DuplicateTag(tag) => BcifError::DuplicateTag(tag),
+        BuildError::TooLarge => BcifError::TooLarge,
+        error @ (BuildError::NoBlock
+        | BuildError::NoLoop
+        | BuildError::InvalidValue(_)
+        | BuildError::EmptyLoop
+        | BuildError::LoopWithoutRows
+        | BuildError::RaggedLoop { .. }) => unreachable!(
+            "BinaryCIF decoding starts a block first, never opens a loop, adds whole \
+             columns of equal length and writes values whose kind holds their text: {error}"
+        ),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,7 +169,9 @@ fn add_category(
     let mut buffer = String::new();
     if rows == 1 {
         for column in &columns {
-            builder.pair(&column.tag, column.value(0, &mut buffer)?)?;
+            builder
+                .pair(&column.tag, column.value(0, &mut buffer)?)
+                .map_err(document_error)?;
             check_text(builder, max_text_bytes)?;
         }
         return Ok(());
@@ -159,10 +181,12 @@ fn add_category(
         .into_iter()
         .map(|column| column.into_raw_column(builder))
         .collect::<Result<Vec<_>, _>>()?;
-    builder.push_table(
-        &tags.iter().map(String::as_str).collect::<Vec<_>>(),
-        raw_columns,
-    )?;
+    builder
+        .push_table(
+            &tags.iter().map(String::as_str).collect::<Vec<_>>(),
+            raw_columns,
+        )
+        .map_err(document_error)?;
     check_text(builder, max_text_bytes)
 }
 
@@ -225,7 +249,7 @@ fn text_column(
                 };
                 match nulls[slot] {
                     Some(cell) => cell,
-                    None => *nulls[slot].insert(builder.text_cell(value)?),
+                    None => *nulls[slot].insert(builder.text_cell(value).map_err(document_error)?),
                 }
             }
             Presence::Present => match stored.entry((text.as_ptr() as usize, text.len())) {
@@ -236,7 +260,11 @@ fn text_column(
                             tag: tag.to_owned(),
                         });
                     }
-                    *entry.insert(builder.text_cell(Value::text(text))?)
+                    *entry.insert(
+                        builder
+                            .text_cell(Value::text(text))
+                            .map_err(document_error)?,
+                    )
                 }
             },
         };
@@ -389,11 +417,64 @@ mod tests {
             Document::from_bcif(&bytes).unwrap_err(),
             BcifError::UnrepresentableValue { tag: "_a.b".into() }
         );
-        let bytes = file("two words", Vec::new());
-        assert!(matches!(
-            Document::from_bcif(&bytes).unwrap_err(),
-            BcifError::Build(BuildError::InvalidBlockName(_))
-        ));
+    }
+
+    #[test]
+    fn reports_an_oversized_document_as_too_large() {
+        assert_eq!(
+            super::document_error(BuildError::TooLarge),
+            BcifError::TooLarge
+        );
+    }
+
+    #[test]
+    fn rejects_names_and_tags_that_do_not_form_a_document() {
+        assert_eq!(
+            Document::from_bcif(&file("two words", Vec::new())).unwrap_err(),
+            BcifError::InvalidBlockName("two words".into())
+        );
+        assert_eq!(
+            Document::from_bcif(&file("", Vec::new())).unwrap_err(),
+            BcifError::InvalidBlockName(String::new())
+        );
+        let spaced = file(
+            "x",
+            vec![category(
+                "_a",
+                1,
+                vec![column("b c", strings(&["1"]), None)],
+            )],
+        );
+        assert_eq!(
+            Document::from_bcif(&spaced).unwrap_err(),
+            BcifError::InvalidTag("_a.b c".into())
+        );
+        let repeated = file(
+            "x",
+            vec![category(
+                "_a",
+                2,
+                vec![
+                    column("b", strings(&["1", "2"]), None),
+                    column("B", strings(&["3", "4"]), None),
+                ],
+            )],
+        );
+        assert_eq!(
+            Document::from_bcif(&repeated).unwrap_err(),
+            BcifError::DuplicateTag("_a.B".into())
+        );
+        let twice = file(
+            "x",
+            vec![
+                category("_a", 1, vec![column("b", strings(&["1"]), None)]),
+                category("_a", 1, vec![column("b", strings(&["2"]), None)]),
+            ],
+        );
+        assert_eq!(
+            Document::from_bcif(&twice).unwrap_err(),
+            BcifError::DuplicateTag("_a.b".into())
+        );
     }
 
     #[test]

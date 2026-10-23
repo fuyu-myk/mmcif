@@ -116,8 +116,11 @@ impl Document {
     ///   limits.
     /// - [`UnrepresentableValue`] if a string contains a line break followed by
     ///   `;`.
-    /// - [`Build`] if the decoded names, tags and values do not form a valid
-    ///   document, such as a block header that is empty or contains whitespace.
+    /// - [`InvalidBlockName`] if a block header is empty or contains
+    ///   whitespace, [`InvalidTag`] if a category or column name makes a tag
+    ///   with whitespace, [`DuplicateTag`] if a block has a tag twice in any
+    ///   ASCII case, and [`TooLarge`] if the decoded document is larger than a
+    ///   [`Document`] can hold.
     ///
     /// # Examples
     ///
@@ -163,7 +166,10 @@ impl Document {
     /// [`LimitExceeded`]: BcifError::LimitExceeded
     /// [`TextLimitExceeded`]: BcifError::TextLimitExceeded
     /// [`UnrepresentableValue`]: BcifError::UnrepresentableValue
-    /// [`Build`]: BcifError::Build
+    /// [`InvalidBlockName`]: BcifError::InvalidBlockName
+    /// [`InvalidTag`]: BcifError::InvalidTag
+    /// [`DuplicateTag`]: BcifError::DuplicateTag
+    /// [`TooLarge`]: BcifError::TooLarge
     pub fn from_bcif(bytes: &[u8]) -> Result<Document, BcifError> {
         Document::from_bcif_with_limits(bytes, BcifLimits::default())
     }

@@ -1,5 +1,3 @@
-use crate::builder::BuildError;
-
 /// An error from decoding BinaryCIF data.
 ///
 /// # Examples
@@ -143,7 +141,17 @@ pub enum BcifError {
         /// The tag of the column holding the string.
         tag: String,
     },
-    /// The decoded names, tags and values do not form a valid document.
-    #[error(transparent)]
-    Build(#[from] BuildError),
+    /// A block header is empty or contains whitespace.
+    #[error("invalid block name {0:?}")]
+    InvalidBlockName(String),
+    /// A category name and a column name do not form a tag without whitespace.
+    #[error("invalid tag {0:?}")]
+    InvalidTag(String),
+    /// A tag appears more than once in a block, ignoring ASCII case.
+    #[error("tag {0} appears more than once in the block")]
+    DuplicateTag(String),
+    /// The text of the decoded document exceeds `u32::MAX` bytes, or a value
+    /// is longer than `2^29 - 1` bytes.
+    #[error("document exceeds the supported size")]
+    TooLarge,
 }

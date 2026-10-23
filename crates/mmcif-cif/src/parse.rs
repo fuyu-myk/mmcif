@@ -212,9 +212,9 @@ impl Iterator for Parser<'_> {
 /// # Examples
 ///
 /// ```
-/// use mmcif_cif::{BlockStream, ParseErrorKind};
+/// use mmcif_cif::{ParseErrorKind, stream_blocks};
 ///
-/// let mut stream = BlockStream::new("data_a\n_x.y 1\ndata_b\n_x.y\ndata_c\n_x.y 3\n");
+/// let mut stream = stream_blocks("data_a\n_x.y 1\ndata_b\n_x.y\ndata_c\n_x.y 3\n");
 ///
 /// assert_eq!(stream.next().unwrap()?.block().name(), "a");
 /// assert_eq!(stream.next().unwrap().err().unwrap().kind, ParseErrorKind::MissingValue);
@@ -227,8 +227,7 @@ pub struct BlockStream<'a> {
 }
 
 impl<'a> BlockStream<'a> {
-    /// Creates a stream over the blocks of `src`, as [`stream_blocks`](crate::stream_blocks) does.
-    pub fn new(src: &'a str) -> Self {
+    pub(crate) fn new(src: &'a str) -> Self {
         match Parser::new(src) {
             Ok(parser) => BlockStream {
                 parser: Some(parser),
@@ -254,3 +253,11 @@ impl<'a> Iterator for BlockStream<'a> {
         Some(parser.next()?.map(|raw| StreamedBlock::new(src, raw)))
     }
 }
+
+/// ```compile_fail,E0624
+/// use mmcif_cif::BlockStream;
+///
+/// let stream = BlockStream::new("data_a\n_x.y 1\n");
+/// ```
+#[cfg(doctest)]
+struct BlockStreamComesFromStreamBlocks;
