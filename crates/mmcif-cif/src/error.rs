@@ -121,4 +121,8 @@ pub enum Error {
     /// The file is not valid BinaryCIF.
     #[error(transparent)]
     Bcif(#[from] BcifError),
+    /// The file is gzip-compressed, and this build cannot decompress it
+    /// because the `gzip` feature is off.
+    #[error("the file is gzip-compressed and the gzip feature is off")]
+    Compressed,
 }

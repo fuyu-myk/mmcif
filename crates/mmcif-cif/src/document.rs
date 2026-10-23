@@ -207,11 +207,13 @@ impl Document {
 
     /// Reads and parses the CIF file at `path`.
     ///
-    /// The file must hold uncompressed CIF text.
+    /// The file is read with [`read_file`](crate::read_file), so it may be
+    /// gzip-compressed when the `gzip` feature is on.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] if the file cannot be read, and [`Error::Parse`]
+    /// Returns [`Error::Io`] if the file cannot be read, [`Error::Compressed`]
+    /// if it is compressed and the `gzip` feature is off, and [`Error::Parse`]
     /// with the errors of [`Document::from_bytes`] if its contents are not
     /// valid CIF.
     ///
@@ -227,8 +229,7 @@ impl Document {
     /// # Ok::<(), mmcif_cif::Error>(())
     /// ```
     pub fn open(path: impl AsRef<Path>) -> Result<Document, Error> {
-        let bytes = std::fs::read(path)?;
-        Ok(Document::from_bytes(bytes)?)
+        Ok(Document::from_bytes(crate::read_file(path)?)?)
     }
 
     /// Parses the CIF file at `path` through a memory map of its contents.

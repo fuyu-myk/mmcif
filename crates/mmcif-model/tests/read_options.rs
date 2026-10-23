@@ -194,3 +194,75 @@ fn formats_follow_the_extension() {
     assert_eq!(Format::from_path("1abc.xyz"), None);
     assert_eq!(Format::from_path("1abc"), None);
 }
+
+#[test]
+fn formats_look_past_gzip_and_name_assembly_files() {
+    assert_eq!(Format::from_path("1abc.cif.gz"), Some(Format::Mmcif));
+    assert_eq!(Format::from_path("1ABC.BCIF.GZ"), Some(Format::Bcif));
+    assert_eq!(Format::from_path("pdb1abc.ent.gz"), Some(Format::Pdb));
+    assert_eq!(Format::from_path("1abc.pdb1"), Some(Format::Pdb));
+    assert_eq!(Format::from_path("1abc.pdb12.gz"), Some(Format::Pdb));
+    assert_eq!(Format::from_path("1abc.gz"), None);
+    assert_eq!(Format::from_path("1abc.pdbx"), None);
+    assert_eq!(Format::from_path("1abc.pdb1x"), None);
+}
+
+fn scratch_copy(source: &str, name: &str, compress: bool) -> std::path::PathBuf {
+    let bytes = std::fs::read(source).unwrap();
+    let path = std::env::temp_dir().join(format!("mmcif-model-gzip-{}-{name}", std::process::id()));
+    let bytes = if compress { gzip(&bytes) } else { bytes };
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[cfg(feature = "gzip")]
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[cfg(not(feature = "gzip"))]
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    [&[0x1f, 0x8b][..], bytes].concat()
+}
+
+#[cfg(feature = "gzip")]
+#[test]
+fn reads_compressed_files_of_every_format() {
+    for (source, name) in [
+        (FIXTURE, "fixture.cif.gz"),
+        (LEGACY, "legacy.pdb1.gz"),
+        (CRAMBIN_BCIF, "crambin.bcif.gz"),
+    ] {
+        let path = scratch_copy(source, name, true);
+        let compressed = mmcif_model::read(&path).unwrap();
+        let plain =
+            mmcif_model::read(scratch_copy(source, &name.replace(".gz", ""), false)).unwrap();
+        assert_eq!(compressed, plain, "{name}");
+    }
+    let loaded = read_with(
+        scratch_copy(FIXTURE, "kept.cif.gz", true),
+        &ReadOptions::new(),
+    )
+    .unwrap();
+    assert!(loaded.document.is_some());
+}
+
+#[cfg(not(feature = "gzip"))]
+#[test]
+fn compressed_files_need_the_gzip_feature() {
+    for name in ["fixture.cif.gz", "legacy.pdb.gz"] {
+        let source = if name.ends_with("cif.gz") {
+            FIXTURE
+        } else {
+            LEGACY
+        };
+        let path = scratch_copy(source, name, true);
+        assert!(matches!(
+            mmcif_model::read(&path),
+            Err(ReadError::Cif(mmcif_cif::Error::Compressed))
+        ));
+    }
+}

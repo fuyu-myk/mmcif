@@ -203,11 +203,13 @@ impl Document {
     /// Reads the BinaryCIF file at `path` and decodes it within the default
     /// [`BcifLimits`].
     ///
-    /// The file must hold uncompressed BinaryCIF.
+    /// The file is read with [`read_file`](crate::read_file), so it may be
+    /// gzip-compressed when the `gzip` feature is on.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] if the file cannot be read, and [`Error::Bcif`]
+    /// Returns [`Error::Io`] if the file cannot be read, [`Error::Compressed`]
+    /// if it is compressed and the `gzip` feature is off, and [`Error::Bcif`]
     /// with the errors of [`Document::from_bcif`] if its contents cannot be
     /// decoded.
     ///
@@ -222,7 +224,6 @@ impl Document {
     /// # Ok::<(), mmcif_cif::Error>(())
     /// ```
     pub fn open_bcif(path: impl AsRef<Path>) -> Result<Document, Error> {
-        let bytes = std::fs::read(path)?;
-        Ok(Document::from_bcif(&bytes)?)
+        Ok(Document::from_bcif(&crate::read_file(path)?)?)
     }
 }

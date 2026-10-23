@@ -50,8 +50,9 @@ fn wrap_at(result: Result<Structure, ReadError>, path: &Path) -> PyResult<PyStru
 /// Read the structure in the file at ``path``.
 ///
 /// The format follows the file extension: ``.cif`` and ``.mmcif`` are read as
-/// mmCIF, ``.bcif`` as BinaryCIF, and ``.pdb`` and ``.ent`` as PDB. ``path`` is
-/// a string or a path-like object.
+/// mmCIF, ``.bcif`` as BinaryCIF, and ``.pdb``, ``.ent`` and assembly files such
+/// as ``.pdb1`` as PDB. A gzip-compressed file, such as ``1crn.cif.gz``, is
+/// decompressed. ``path`` is a string or a path-like object.
 ///
 /// Raises
 /// ------

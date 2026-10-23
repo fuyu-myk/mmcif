@@ -10,12 +10,16 @@ readme = "README.md"
 keywords = ["mmcif", "pdb", "protein", "structure", "bioinformatics"]
 categories = ["science::computational-biology::structural-modeling", "science::bioinformatics::proteomics", "parser-implementations"]
 
+[features]
+gzip = ["mmcif-cif/gzip"]
+
 [dependencies]
 mmcif-cif.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+flate2.workspace = true
 proptest.workspace = true
 
 [[bench]]

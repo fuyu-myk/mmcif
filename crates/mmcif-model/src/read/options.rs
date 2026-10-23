@@ -107,8 +107,10 @@ pub enum Format {
 impl Format {
     /// Returns the format a file's extension names, ignoring case, or `None`.
     ///
-    /// `cif` and `mmcif` are mmCIF, `bcif` is BinaryCIF, and `pdb` and `ent`
-    /// are PDB.
+    /// `cif` and `mmcif` are mmCIF, `bcif` is BinaryCIF, and `pdb`, `ent` and
+    /// the assembly extensions `pdb1`, `pdb2` and so on are PDB. A trailing
+    /// `.gz` is passed over, since the readers decompress gzip-compressed
+    /// files when the `gzip` feature is on.
     ///
     /// # Examples
     ///
@@ -116,18 +118,28 @@ impl Format {
     /// use mmcif_model::Format;
     ///
     /// assert_eq!(Format::from_path("1ABC.CIF"), Some(Format::Mmcif));
-    /// assert_eq!(Format::from_path("pdb1abc.ent"), Some(Format::Pdb));
+    /// assert_eq!(Format::from_path("1abc.bcif.gz"), Some(Format::Bcif));
+    /// assert_eq!(Format::from_path("1abc.pdb1"), Some(Format::Pdb));
     /// assert_eq!(Format::from_path("1abc.xyz"), None);
     /// ```
     pub fn from_path(path: impl AsRef<Path>) -> Option<Format> {
-        let extension = path.as_ref().extension()?.to_str()?.to_ascii_lowercase();
-        match extension.as_str() {
+        let name = path.as_ref().file_name()?.to_str()?.to_ascii_lowercase();
+        let name = name.strip_suffix(".gz").unwrap_or(&name);
+        let (_, extension) = name.rsplit_once('.')?;
+        match extension {
             "cif" | "mmcif" => Some(Format::Mmcif),
             "bcif" => Some(Format::Bcif),
             "pdb" | "ent" => Some(Format::Pdb),
+            _ if is_assembly_extension(extension) => Some(Format::Pdb),
             _ => None,
         }
     }
+}
+
+fn is_assembly_extension(extension: &str) -> bool {
+    extension.strip_prefix("pdb").is_some_and(|number| {
+        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 /// Reads a structure from a file with `options`, choosing the format with

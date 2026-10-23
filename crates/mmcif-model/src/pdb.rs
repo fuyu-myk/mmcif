@@ -594,12 +594,14 @@ pub(crate) fn parse_pdb_with(text: &str, options: &ReadOptions) -> Result<Loaded
 
 /// Reads a structure from a PDB file.
 ///
-/// See [`parse_pdb`] for how the file is read.
+/// See [`parse_pdb`] for how the file is read. The file may be
+/// gzip-compressed when the `gzip` feature is on.
 ///
 /// # Errors
 ///
-/// Returns [`ReadError::Cif`] if the file cannot be read, and
-/// [`ReadError::Pdb`] if it is not valid UTF-8 or if [`parse_pdb`] fails.
+/// Returns [`ReadError::Cif`] if the file cannot be read or is compressed
+/// while the `gzip` feature is off, and [`ReadError::Pdb`] if it is not
+/// valid UTF-8 or if [`parse_pdb`] fails.
 ///
 /// # Examples
 ///
@@ -617,7 +619,7 @@ pub(crate) fn read_pdb_with(
     path: impl AsRef<Path>,
     options: &ReadOptions,
 ) -> Result<Loaded, ReadError> {
-    let bytes = std::fs::read(path).map_err(mmcif_cif::Error::from)?;
+    let bytes = mmcif_cif::read_file(path)?;
     let text = String::from_utf8(bytes).map_err(|error| {
         let valid = &error.as_bytes()[..error.utf8_error().valid_up_to()];
         ReadError::Pdb {

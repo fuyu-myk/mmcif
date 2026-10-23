@@ -1,3 +1,4 @@
+import gzip
 import threading
 
 import numpy as np
@@ -178,3 +179,12 @@ def test_binary_cif_matches_text(crambin_bcif_path):
     text = m.parse_bcif(crambin_bcif_path.read_bytes())
     assert binary.models[0].atom_count == text.models[0].atom_count == 327
     np.testing.assert_array_equal(binary.models[0].coordinates, text.models[0].coordinates)
+
+
+def test_reads_gzip_compressed_files(tmp_path, crambin_bcif_path, legacy_pdb_path):
+    for source, name in ((crambin_bcif_path, "1crn.bcif.gz"), (legacy_pdb_path, "legacy.pdb1.gz")):
+        target = tmp_path / name
+        target.write_bytes(gzip.compress(source.read_bytes()))
+        compressed, plain = m.read(target), m.read(source)
+        assert compressed.models[0].atom_count == plain.models[0].atom_count
+        np.testing.assert_array_equal(compressed.models[0].coordinates, plain.models[0].coordinates)

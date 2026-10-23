@@ -23,6 +23,10 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Tests without the gzip feature
+        run: |
+          cargo test -p mmcif-cif --test gzip
+          cargo test -p mmcif-model --test read_options
 
   msrv:
     runs-on: ubuntu-latest

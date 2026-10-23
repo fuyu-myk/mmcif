@@ -12,8 +12,8 @@ name = "mmcif_io"
 crate-type = ["cdylib"]
 
 [dependencies]
-mmcif-cif.workspace = true
-mmcif-model.workspace = true
+mmcif-cif = { workspace = true, features = ["gzip"] }
+mmcif-model = { workspace = true, features = ["gzip"] }
 mmcif-ccd.workspace = true
 mmcif-geom.workspace = true
 pyo3 = { workspace = true, features = ["abi3-py310"] }
