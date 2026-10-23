@@ -85,7 +85,13 @@ pub(crate) fn read_assemblies(block: &Block<'_>) -> Result<Vec<Assembly>, ReadEr
             .collect();
         let generator = Generator::new(expressions.required_text(row)?, asym_ids)?;
         let index = *index_of.entry(id.to_owned()).or_insert_with(|| {
-            assemblies.push(Assembly::new(AssemblyId::new(id), Vec::new()));
+            assemblies.push(Assembly {
+                id: AssemblyId::new(id),
+                details: None,
+                oligomeric_details: None,
+                oligomeric_count: None,
+                generators: Vec::new(),
+            });
             assemblies.len() - 1
         });
         assemblies[index].generators.push(generator);

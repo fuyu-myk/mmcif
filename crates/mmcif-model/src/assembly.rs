@@ -138,15 +138,6 @@ pub struct Operator {
 }
 
 impl Operator {
-    /// Creates an operator with no type.
-    pub fn new(id: OperatorId, transform: Transform) -> Self {
-        Operator {
-            id,
-            kind: None,
-            transform,
-        }
-    }
-
     /// Returns the operator id.
     pub fn id(&self) -> &OperatorId {
         &self.id
@@ -170,14 +161,13 @@ impl Operator {
 /// # Examples
 ///
 /// ```
-/// use mmcif_model::Generator;
+/// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+/// let generator = &structure.assembly("2").unwrap().generators()[0];
 ///
-/// let generator = Generator::new("(1-60)", vec!["A".into(), "B".into()])?;
-///
-/// assert_eq!(generator.expression(), "(1-60)");
-/// assert_eq!(generator.operators().len(), 60);
-/// assert_eq!(generator.asym_ids().len(), 2);
-/// # Ok::<(), mmcif_model::InvalidExpression>(())
+/// assert_eq!(generator.expression(), "(1,2)");
+/// assert_eq!(generator.operators().len(), 2);
+/// assert_eq!(generator.asym_ids(), ["AA", "C"]);
+/// # Ok::<(), mmcif_model::ReadError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Generator {
@@ -187,23 +177,10 @@ pub struct Generator {
 }
 
 impl Generator {
-    /// Creates a generator that applies `expression` to the chains
-    /// `asym_ids`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidExpression`] if `expression` cannot be parsed by
-    /// [`OperatorExpression::parse`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use mmcif_model::Generator;
-    ///
-    /// assert!(Generator::new("1,2", vec!["A".into()]).is_ok());
-    /// assert!(Generator::new("(1", vec!["A".into()]).is_err());
-    /// ```
-    pub fn new(expression: &str, asym_ids: Vec<LabelAsymId>) -> Result<Self, InvalidExpression> {
+    pub(crate) fn new(
+        expression: &str,
+        asym_ids: Vec<LabelAsymId>,
+    ) -> Result<Self, InvalidExpression> {
         Ok(Generator {
             expression: expression.to_owned(),
             operators: OperatorExpression::parse(expression)?,
@@ -253,17 +230,6 @@ pub struct Assembly {
 }
 
 impl Assembly {
-    /// Creates an assembly with no details and no oligomeric state.
-    pub fn new(id: AssemblyId, generators: Vec<Generator>) -> Self {
-        Assembly {
-            id,
-            details: None,
-            oligomeric_details: None,
-            oligomeric_count: None,
-            generators,
-        }
-    }
-
     /// Returns the assembly id.
     pub fn id(&self) -> &AssemblyId {
         &self.id
@@ -298,17 +264,13 @@ impl Assembly {
     /// # Examples
     ///
     /// ```
-    /// use mmcif_model::{Assembly, AssemblyId, Generator};
+    /// # let structure = mmcif_model::parse_mmcif(include_str!("../tests/fixtures/pathologies.cif"))?;
+    /// let assembly = structure.assembly("3").unwrap();
     ///
-    /// let assembly = Assembly::new(
-    ///     AssemblyId::new("1"),
-    ///     vec![
-    ///         Generator::new("(1-2)(5,6)", vec!["A".into()])?,
-    ///         Generator::new("1", vec!["B".into()])?,
-    ///     ],
-    /// );
-    /// assert_eq!(assembly.operator_count(), 5);
-    /// # Ok::<(), mmcif_model::InvalidExpression>(())
+    /// assert_eq!(assembly.generators()[0].expression(), "(2)(3)");
+    /// assert_eq!(assembly.operator_count(), 1);
+    /// assert_eq!(structure.assembly("2").unwrap().operator_count(), 2);
+    /// # Ok::<(), mmcif_model::ReadError>(())
     /// ```
     pub fn operator_count(&self) -> usize {
         self.generators.iter().map(|g| g.operators.len()).sum()
@@ -538,6 +500,26 @@ fn copy_transformed_chain(
         }
     }
 }
+
+/// ```compile_fail,E0599
+/// use mmcif_model::{Operator, OperatorId, Transform};
+///
+/// let operator = Operator::new(OperatorId::new("1"), Transform::IDENTITY);
+/// ```
+///
+/// ```compile_fail,E0624
+/// use mmcif_model::Generator;
+///
+/// let generator = Generator::new("1", vec!["A".into()]);
+/// ```
+///
+/// ```compile_fail,E0599
+/// use mmcif_model::{Assembly, AssemblyId};
+///
+/// let assembly = Assembly::new(AssemblyId::new("1"), Vec::new());
+/// ```
+#[cfg(doctest)]
+struct ConstructorsAreNotPublic;
 
 #[cfg(test)]
 mod tests {
