@@ -649,10 +649,29 @@ pub fn read_pdb(path: impl AsRef<Path>) -> Result<Structure, ReadError> {
     read_pdb_with(path, &ReadOptions::new()).map(|loaded| loaded.structure)
 }
 
-pub(crate) fn read_pdb_with(
-    path: impl AsRef<Path>,
-    options: &ReadOptions,
-) -> Result<Loaded, ReadError> {
+/// Reads a structure from a PDB file with `options`.
+///
+/// The file is read as [`read_pdb`] reads it, except as `options` change.
+/// [`Loaded::document`] is `None`.
+///
+/// # Errors
+///
+/// Returns the errors of [`read_pdb`], except that of a `REMARK 350` that a
+/// lenient read skips.
+///
+/// # Examples
+///
+/// ```
+/// use mmcif_model::{ReadOptions, read_pdb_with};
+///
+/// let options = ReadOptions::new().first_model_only(true);
+/// let loaded = read_pdb_with("tests/fixtures/legacy.pdb", &options)?;
+///
+/// assert_eq!(loaded.structure.models().len(), 1);
+/// assert!(loaded.skipped.is_empty());
+/// # Ok::<(), mmcif_model::ReadError>(())
+/// ```
+pub fn read_pdb_with(path: impl AsRef<Path>, options: &ReadOptions) -> Result<Loaded, ReadError> {
     let bytes = mmcif_cif::read_file(path)?;
     let text = String::from_utf8(bytes).map_err(|error| {
         let valid = &error.as_bytes()[..error.utf8_error().valid_up_to()];
