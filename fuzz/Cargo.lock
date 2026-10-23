@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-cif"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "memchr",
  "memmap2",
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "mmcif-model"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "mmcif-cif",
  "thiserror",
