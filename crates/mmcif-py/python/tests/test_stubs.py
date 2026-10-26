@@ -1,5 +1,6 @@
 import ast
 import importlib.resources
+import inspect
 import subprocess
 import sys
 import types
@@ -29,8 +30,38 @@ def test_the_stubs_match_the_binding():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def stub_tree():
+    return ast.parse(importlib.resources.files("mmcif_io").joinpath("__init__.pyi").read_text())
+
+
+def stub_docstrings():
+    tree = stub_tree()
+    yield (), ast.get_docstring(tree)
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            yield (node.name,), ast.get_docstring(node)
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and not item.name.startswith("__"):
+                    yield (node.name, item.name), ast.get_docstring(item)
+
+
+def runtime_docstring(path):
+    obj = m
+    for name in path:
+        obj = inspect.getattr_static(obj, name)
+    if isinstance(obj, staticmethod):
+        obj = obj.__func__
+    return inspect.cleandoc(obj.__doc__) if obj.__doc__ else None
+
+
+def test_the_stubs_carry_the_binding_docstrings():
+    differing = [".".join(path) or "module" for path, doc in stub_docstrings() if doc != runtime_docstring(path)]
+    assert differing == []
+
+
 def stub_properties():
-    tree = ast.parse(importlib.resources.files("mmcif_io").joinpath("__init__.pyi").read_text())
+    tree = stub_tree()
     namespace = {"np": np, "NDArray": NDArray, **vars(m)}
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign)):
